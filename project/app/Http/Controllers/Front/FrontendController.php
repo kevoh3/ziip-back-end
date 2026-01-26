@@ -18,7 +18,7 @@ use App\Models\Module;
 use App\Models\PaymentGateway;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
-use Markury\MarkuryPost;
+//use Markury\MarkuryPost;
 
 
 class FrontendController extends Controller
@@ -239,20 +239,20 @@ class FrontendController extends Controller
 
     function auth_guests()
     {
-        $chk = MarkuryPost::marcuryBase();
-        $chkData = MarkuryPost::marcurryBase();
-        $actual_path = str_replace('project', '', base_path());
-        if ($chk != MarkuryPost::maarcuryBase()) {
-            if ($chkData < MarkuryPost::marrcuryBase()) {
-                if (is_dir($actual_path . '/install')) {
-                    header("Location: " . url('/install'));
-                    die();
-                } else {
-                    echo MarkuryPost::marcuryBasee();
-                    die();
-                }
-            }
-        }
+//        $chk = MarkuryPost::marcuryBase();
+//        $chkData = MarkuryPost::marcurryBase();
+//        $actual_path = str_replace('project', '', base_path());
+//        if ($chk != MarkuryPost::maarcuryBase()) {
+//            if ($chkData < MarkuryPost::marrcuryBase()) {
+//                if (is_dir($actual_path . '/install')) {
+//                    header("Location: " . url('/install'));
+//                    die();
+//                } else {
+//                    echo MarkuryPost::marcuryBasee();
+//                    die();
+//                }
+//            }
+//        }
     }
 
     public function subscription(Request $request)
