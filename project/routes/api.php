@@ -38,32 +38,25 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
     Route::post('send/two-step/verify-code/',      [AuthController::class, 'twoStepsendCode'])->middleware('auth:sanctum');
     Route::post('/two-step/code/verify',            [AuthController::class, 'twoStepCodeVerify'])->middleware('auth:sanctum');
     Route::get('resend/two-step/verify-code',      [AuthController::class, 'twoStepResendCode'])->middleware('auth:sanctum');
-
     Route::middleware(['auth:sanctum', 'email_verify', 'twostep_api'])->group(function () {
         Route::get('settings',                [AuthController::class, 'settings']);
         Route::post('logout',                  [AuthController::class, 'logout']);
         Route::get('/dashboard',               [UserController::class, 'index']);
         Route::get('/generate-qrcode',         [UserController::class, 'generateQR']);
         Route::get('/user-info',               [UserController::class, 'userInfo']);
-
         Route::get('kyc-form-data',            [UserController::class, 'kycForm']);
         Route::post('kyc-form',                [UserController::class, 'kycFormSubmit']);
-
         Route::get('transactions',             [UserController::class, 'transactions']);
         Route::get('transaction/details/{id}', [UserController::class, 'trxDetails']);
-
         Route::post('profile-settings',        [UserController::class, 'profileSubmit']);
         Route::post('change-password',         [UserController::class, 'changePass']);
-
         Route::middleware(['module', 'kyc'])->group(function () {
             //transfer-money
             Route::get('transfer-money',    [TransferController::class, 'transferForm']);
             Route::post('transfer-money',   [TransferController::class, 'submitTransfer']);
-
             //Request Money
             Route::get('request-money',     [RequestMoneyController::class, 'requestForm']);
             Route::post('request-money',    [RequestMoneyController::class, 'requestSubmit']);
-
             //exchange money
             Route::get('exchange-money',    [ExchangeMoneyController::class, 'exchangeForm']);
             Route::post('exchange-money',   [ExchangeMoneyController::class, 'submitExchange']);
@@ -160,9 +153,6 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
         Route::post('/two-step/verify',           [UserController::class, 'twoStepVerifySubmit']);
     });
 });
-
-
-
 
 //merchant
 Route::prefix('merchant')->middleware('maintenance')->group(function () {
