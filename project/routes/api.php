@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Callbacks\ChoiceBankCallbackController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\User\AuthController;
 use App\Http\Controllers\Api\User\UserController;
