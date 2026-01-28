@@ -203,14 +203,16 @@ Route::prefix('merchant')->middleware('maintenance')->group(function () {
         Route::post('open/support/ticket',                   [SupportTicketController::class, 'openTicket'])->name('merchant.ticket.open');
         Route::post('reply/ticket/{ticket_num}',             [SupportTicketController::class, 'replyTicket'])->name('merchant.ticket.reply');
     });
-    Route::prefix('callbacks')->middleware('maintenance')->group(function () {
 
-        // Main webhook endpoint (most APIs POST here)
-        Route::post('choicebank', [ChoiceBankCallbackController::class, 'handle'])
-            ->name('callbacks.choicebank');
+});
+//callbacks
+Route::prefix('callbacks')->middleware('maintenance')->group(function () {
 
-        // Optional: some providers send a GET ping/challenge to verify endpoint
-        Route::get('choicebank', [ChoiceBankCallbackController::class, 'verify'])
-            ->name('callbacks.choicebank.verify');
-    });
+    // Main webhook endpoint (most APIs POST here)
+    Route::post('choicebank', [ChoiceBankCallbackController::class, 'handle'])
+        ->name('callbacks.choicebank');
+
+    // Optional: some providers send a GET ping/challenge to verify endpoint
+    Route::get('choicebank', [ChoiceBankCallbackController::class, 'verify'])
+        ->name('callbacks.choicebank.verify');
 });
