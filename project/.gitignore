@@ -17,3 +17,5 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+# Ignore images folder outside project
+../assets/images/

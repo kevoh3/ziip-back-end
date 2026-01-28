@@ -173,6 +173,7 @@ return [
         // Spatie\Permission\PermissionServiceProvider::class,
         Mews\Purifier\PurifierServiceProvider::class,
         Anhskohbo\NoCaptcha\NoCaptchaServiceProvider::class,
+        App\Providers\ChoiceServiceProvider::class,
     ])->toArray(),
 
     /*
