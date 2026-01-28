@@ -256,7 +256,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('language/remove', [LanguageController::class, 'destroy'])->name('remove.language')->middleware('permission:manage language');
 
         // admin language
-        Route::get('adminlanguage/status/{id1}/{id2}', [AdminLanguageController::class, 'status'])->name('adminlanguage.status')->middleware('permission:manage language');
+        Route::get('adminlanguage/status/{id1}/{id2}', [LanguageController::class, 'status'])->name('adminlanguage.status')->middleware('permission:manage language');
 
 
         //==================================== LANGUAGE SETTING SECTION END =============================================//
