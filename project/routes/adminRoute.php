@@ -22,7 +22,7 @@ use App\Http\Controllers\Admin\ManageChargeController;
 use App\Http\Controllers\Admin\ManageEscrowController;
 use App\Http\Controllers\Admin\ManageModuleController;
 use App\Http\Controllers\Admin\ManageTicketController;
-use App\Http\Controllers\Admin\AdminLanguageController;
+
 use App\Http\Controllers\Admin\ManageCountryController;
 use App\Http\Controllers\Admin\ManageDepositController;
 use App\Http\Controllers\Admin\GeneralSettingController;
@@ -275,7 +275,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('user/create', [ManageUserController::class, 'create'])->name('user.create')->middleware('permission:manage user');
         Route::post('user/store', [ManageUserController::class, 'store'])->name('user.store')->middleware('permission:manage user');
-        
+
         Route::get('user-details/{id}', [ManageUserController::class, 'details'])->name('user.details')->middleware('permission:edit user');
 
         Route::post('user-profile/update/{id}', [ManageUserController::class, 'profileUpdate'])->name('user.profile.update')->middleware('permission:update user');
@@ -292,7 +292,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('manage-merchants', [ManageMerchantController::class, 'index'])->name('merchant.index')->middleware('permission:manage merchant');
         Route::get('merchant/create', [ManageMerchantController::class, 'create'])->name('merchant.create')->middleware('permission:manage merchant');
         Route::post('merchant/store', [ManageMerchantController::class, 'store'])->name('merchant.store')->middleware('permission:manage merchant');
-        
+
         Route::get('merchant-details/{id}', [ManageMerchantController::class, 'details'])->name('merchant.details')->middleware('permission:edit merchant');
 
         Route::post('merchant/balance-modify', [ManageMerchantController::class, 'modifyBalance'])->name('merchant.balance.modify')->middleware('permission:merchant balance modify');
