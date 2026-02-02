@@ -49,6 +49,8 @@ class AuthController extends ApiController
 
         $data = $request->only('first_name','last_name','email','dial_code','phone','country','address','password');
 
+        $data['name'] = strtoupper($request->first_name . ' ' . $request->last_name);
+
         $countryData         = $countries->where('name',$request->country)->first();
         $currencyId          = $countryData->currency_id;
         $data['phone']       = $request->dial_code.$request->phone;
@@ -71,7 +73,7 @@ class AuthController extends ApiController
             'user_type'   => 1,
             'currency_id' => $currencyId,
             'balance'     => 0,
-            'wallet_name' => 'Main Wallet' // Optional: give it a default name
+            'wallet_name' =>  $data['name'] // Optional: give it a default name
         ]);
 
         // Auto login
