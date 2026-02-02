@@ -14,7 +14,7 @@ use App\Http\Resources\UserResource;
 
 class AuthController extends ApiController
 {
-     /**
+    /**
      * Register api
      *
      * @return \Illuminate\Http\Response
@@ -26,48 +26,59 @@ class AuthController extends ApiController
         $name      = $countries->pluck('name')->toArray();
 
         if($gs->registration == 0){
-          return $this->sendError('Registration Error',['Registration is currently off.' ]);
+            return $this->sendError('Registration Error',['Registration is currently off.' ]);
         }
 
         $validator = Validator::make($request->all(), [
-            'name'                => 'required',
-            'email'               => ['required','email','unique:users',$gs->allowed_email != null ? 'email_domain:'.$request->email:''],
-            'dial_code'           => 'required',
-            'phone'               => 'required',
-            'country'             => 'required|in:'.implode(',',$name),
-            'address'             => 'required',
-            'password'            => 'required|min:6|confirmed',
+            'first_name'                => 'required',
+            'last_name'                 => 'required',
+            'email'                     => ['required','email','unique:users',$gs->allowed_email != null ? 'email_domain:'.$request->email:''],
+            'dial_code'                 => 'required',
+            'phone'                     => 'required',
+            'country'                   => 'required|in:'.implode(',',$name),
+            'address'                   => 'required',
+            'password'                  => 'required|min:6|confirmed',
         ],
-        [
-          'email.email_domain'    => 'Allowed emails are only within : '.$gs->allowed_email,
-        ]);
+            [
+                'email.email_domain'          => 'Allowed emails are only within : '.$gs->allowed_email,
+            ]);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
-   
-        $data = $request->only('name','email','dial_code','phone','country','address','password');
 
-        $currency               = $countries->where('name',$request->country)->value('currency_id');
-        $data['phone']          = $request->dial_code.$request->phone;
-        $data['password']       = bcrypt($request->password);
+        $data = $request->only('first_name','last_name','email','dial_code','phone','country','address','password');
+
+        $countryData         = $countries->where('name',$request->country)->first();
+        $currencyId          = $countryData->currency_id;
+        $data['phone']       = $request->dial_code.$request->phone;
+        $data['password']    = bcrypt($request->password);
         $data['email_verified'] = $gs->is_verify == 1 ? 0:1;
+
+        // Create user
         $user = User::create($data);
-        
+
         $success['token'] =  $user->createToken('wallet')->plainTextToken;
         $success['user']  =  new UserResource($user);
 
+        // Create wallet with automatic account number generation
+        // The Wallet model's boot() method will automatically:
+        // 1. Generate account number (phone for KES, numeric for others)
+        // 2. Set wallet_status to 'active'
+        // 3. Set is_primary to true (since it's the only wallet)
         Wallet::create([
             'user_id'     => $user->id,
             'user_type'   => 1,
-            'currency_id' => $currency,
-            'balance'     => 0
+            'currency_id' => $currencyId,
+            'balance'     => 0,
+            'wallet_name' => 'Main Wallet' // Optional: give it a default name
         ]);
 
-       Auth::guard('web')->attempt(['email' => $request->email, 'password' => $request->password]);
+        // Auto login
+        Auth::guard('web')->attempt(['email' => $request->email, 'password' => $request->password]);
 
-       if($gs->is_verify == 1){
-       
+        // Send verification email if enabled
+        if($gs->is_verify == 1){
             $user->verify_code = randNum();
             $user->save();
 
@@ -77,11 +88,11 @@ class AuthController extends ApiController
                 'subject' => __('Email Verification Code'),
                 'message' => __('Email Verification Code is : '). $user->verify_code,
             ]);
-       }
+        }
 
-       return $this->sendResponse($success, 'User registered successfully.');
+        return $this->sendResponse($success, 'User registered successfully.');
     }
-   
+
     /**
      * Login api
      *
@@ -89,19 +100,19 @@ class AuthController extends ApiController
      */
     public function login(Request $request)
     {
-        if(Auth::attempt(['email' => $request->email, 'password' => $request->password])){ 
-            $user = Auth::user(); 
-            $success['token'] =  $user->createToken('wallet')->plainTextToken; 
+        if(Auth::attempt(['email' => $request->email, 'password' => $request->password])){
+            $user = Auth::user();
+            $success['token'] =  $user->createToken('wallet')->plainTextToken;
             $success['user']  =  new UserResource($user);
-            
+
             $code = randNum();
             $user->two_fa_code = $code;
             $user->update();
             return $this->sendResponse($success, 'Login successful.');
-        } 
-        else{ 
+        }
+        else{
             return $this->sendError('Error.', ['Unauthorised access']);
-        } 
+        }
     }
 
     public function logout(Request $request)
@@ -111,8 +122,8 @@ class AuthController extends ApiController
         }
         $request->user()->currentAccessToken()->delete();
         if($request->user()->two_fa_status == 1){
-          $request->user()->two_fa = 1;
-          $request->user()->save();
+            $request->user()->two_fa = 1;
+            $request->user()->save();
         }
         Auth::logout();
         return $this->sendResponse(['success'], 'Logout successful.');
@@ -124,9 +135,9 @@ class AuthController extends ApiController
             'email' => 'required|email'
         ]);
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
-   
+
         $exist = User::where('email',$request->email)->first();
         if(!$exist){
             return $this->sendError('error',['Sorry! Email doesn\'t exist']);
@@ -136,10 +147,10 @@ class AuthController extends ApiController
         $exist->save();
 
         @email([
-          'email'   => $exist->email,
-          'name'    => $exist->name,
-          'subject' => __('Password Reset Code'),
-          'message' => __('Password reset code is : ').$exist->verify_code,
+            'email'   => $exist->email,
+            'name'    => $exist->name,
+            'subject' => __('Password Reset Code'),
+            'message' => __('Password reset code is : ').$exist->verify_code,
         ]);
 
         $success['email'] = $exist->email;
@@ -155,7 +166,7 @@ class AuthController extends ApiController
         ]);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
 
         $user = User::where('email',$request->email)->first();
@@ -180,11 +191,11 @@ class AuthController extends ApiController
         ]);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
         $user = User::where('email',$request->email)->first();
         if(!$user || !$request->code){
-          return $this->sendError('Error', ['Invalid request']);
+            return $this->sendError('Error', ['Invalid request']);
         }
         $user->password = bcrypt($request->password);
         $user->update();
@@ -198,7 +209,7 @@ class AuthController extends ApiController
         ]);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
         $user = auth()->user();
         if($request->code != $user->two_fa_code){
@@ -215,9 +226,9 @@ class AuthController extends ApiController
         $user->save();
         return $this->sendResponse(['success'],$msg);
     }
-    
-    
-    
+
+
+
     public function twoStepCodeVerify(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -225,13 +236,13 @@ class AuthController extends ApiController
         ]);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
         $user = auth()->user();
         if($request->code != $user->two_fa_code){
             return $this->sendError('Error',['Invalid OTP']);
         }
-        
+
         return $this->sendResponse(['success'],'Valid OTP');
     }
 
@@ -244,16 +255,16 @@ class AuthController extends ApiController
         sendSMS($user->phone,'Your two step authentication OTP is : '.$code,Generalsetting::value('contact_no'));
         return $this->sendResponse(['success'=>true,'code'=>$code],'OTP code is sent to your phone.');
     }
-    
-    
+
+
     public function twoStepsendCode(Request $request)
     {
         $validator = Validator::make($request->all(), ['password'=>'required|confirmed']);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
-        
+
         $code = randNum();
         $user = auth()->user();
         $user->two_fa_code = $code;
@@ -270,15 +281,15 @@ class AuthController extends ApiController
         ]);
 
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
         $user = auth()->user();
         if(!$user){
-          return $this->sendError('Error',['User doesn\'t exist']);
+            return $this->sendError('Error',['User doesn\'t exist']);
         }
 
         if($user->verify_code != $request->code){
-          return $this->sendError('Error',['Invalid verification code.']);
+            return $this->sendError('Error',['Invalid verification code.']);
         }
 
         $user->verify_code = null;
@@ -288,28 +299,28 @@ class AuthController extends ApiController
         return $this->sendResponse(['success'],'Email has been verified');
 
     }
-    
+
     public function verifyEmailResendCode()
     {
         $code = randNum();
         $user = auth()->user();
         $user->verify_code = $code;
         $user->update();
-       
+
         @email([
-          'email'   => $user->email,
-          'name'    => $user->name,
-          'subject' => __('Email Verification Code'),
-          'message' => __('Email Verification Code is : '). $user->verify_code,
-         ]);
+            'email'   => $user->email,
+            'name'    => $user->name,
+            'subject' => __('Email Verification Code'),
+            'message' => __('Email Verification Code is : '). $user->verify_code,
+        ]);
 
         return $this->sendResponse(['success'],'Verify code resent to your email.');
     }
-    
-    
+
+
     public function settings(){
         $main = Generalsetting::findOrFail(1);
-        $setting['logo'] = asset('assets/images/'.$main->logo);   
+        $setting['logo'] = asset('assets/images/'.$main->logo);
         $setting['title'] = $main->title;
         $setting['is_maintenance'] = $main->is_maintenance;
         $setting['two_fa'] = $main->two_fa;

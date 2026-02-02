@@ -18,6 +18,8 @@ class User extends Authenticatable
      * @var string[]
      */
     protected $fillable = [
+        'first_name',    // Add first_name
+        'last_name',     // Add last_name
         'name',
         'email',
         'photo',
@@ -67,7 +69,7 @@ class User extends Authenticatable
             ]);
         });
     }
-    
+
     public function dailyLimit()
     {
         $rate = defaultCurr()->rate;
@@ -92,5 +94,5 @@ class User extends Authenticatable
         return  $this->transactions()->where('remark','cash_out')->whereMonth('created_at',Carbon::now()->month)->selectRaw("SUM(amount / $rate) as total")->get()->sum('total');
     }
 
-   
+
 }
