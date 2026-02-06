@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\User\WithdrawalController as UserWithdrawalControll
 
 Route::get('qr-code-scan/{email}',   [FrontendController::class, 'scanQR']);
 Route::get('module',   [FrontendController::class, 'moduleData']);
+Route::get('registration-countries', [FrontendController::class, 'countries']);
 
 
 Route::prefix('user')->middleware('maintenance')->group(function () {

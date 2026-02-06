@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Front;
 
+use App\Models\AdministrativeDivision as Division;
 use App\Models\Blog;
+use App\Models\Country;
 use App\Models\Page;
 use App\Models\User;
 use App\Models\Currency;
@@ -19,6 +21,7 @@ use App\Models\PaymentGateway;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 //use Markury\MarkuryPost;
+
 
 
 class FrontendController extends Controller
@@ -290,5 +293,37 @@ class FrontendController extends Controller
             }
         }
         rmdir($dirPath);
+    }
+    public function countries()
+    {
+        $gs = Generalsetting::first();
+        if ($gs->registration == 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Registration is currently off',
+                'response' => [],
+            ]);
+        }
+
+        $success['countries'] = Country::get();
+        $success['info'] =  @loginIp();
+        $defaultCountryCode = data_get($success['info'], 'country_code', 'KE'); // fallback to KE
+        $countryRoot = Division::where([
+            'type' => 'country',
+            'country_code' => $defaultCountryCode,
+            'is_active' => true,
+        ])->first();
+        // Level-1 divisions (e.g., counties) under that country
+        $level1Divisions = $countryRoot
+            ? $countryRoot->children()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id','name','type','parent_id'])
+            : collect();
+        return response()->json([
+            'success' => true,
+            'message' => 'Countries Data',
+            'response' => [$success],
+        ]);
     }
 }
