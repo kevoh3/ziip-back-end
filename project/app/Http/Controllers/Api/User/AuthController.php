@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Http\Controllers\Api\User;
-
+use App\Enums\DocumentType;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\Country;
@@ -327,6 +327,13 @@ class AuthController extends ApiController
         $setting['is_maintenance'] = $main->is_maintenance;
         $setting['two_fa'] = $main->two_fa;
         return $this->sendResponse($setting,'Setting Data');
+    }
+    public function documentType()
+    {
+        $data['document_types'] = collect(DocumentType::cases())
+            ->map(fn($type) => $type->value)
+            ->values();
+        return $this->sendResponse($data,'Document Type');
     }
 
 }

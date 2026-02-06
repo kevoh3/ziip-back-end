@@ -29,11 +29,11 @@ class UserController extends ApiController{
     {
        return Transaction::where('user_id',auth()->id())->where('user_type',1)->with('currency');
     }
-    
+
     public function userInfo(){
         $success['user'] = new User(auth()->user());
         return $this->sendResponse($success,'success');
-        
+
     }
 
     public function index()
@@ -90,7 +90,7 @@ class UserController extends ApiController{
         $user->city    = $request->city;
         $user->zip     = $request->zip;
         $user->address = $request->address;
-     
+
         if($request->photo){
             $user->photo = MediaHelper::handleMakeImage($request->photo,[300,300]);
         }
@@ -98,7 +98,7 @@ class UserController extends ApiController{
         $user->update();
         $user['photo'] = asset('assets/images/'.$user->photo);
         return $this->sendResponse($user,'Profile has been updated');
-    } 
+    }
 
     public function changePass(Request $request)
     {
@@ -117,13 +117,21 @@ class UserController extends ApiController{
         }
     }
 
-   
+
 
     public function kycForm()
     {
         if(auth()->user()->kyc_status == 2) return $this->sendError('Error',['You have already submitted the KYC data.']);
         if(auth()->user()->kyc_status == 1) return $this->sendError('Error',['Your KYC data is already verified.']);
-        $success['kyc_form_data'] = KycForm::where('user_type',1)->get();
+        //$success['kyc_form_data'] = KycForm::where('user_type',1)->get();
+        $schema = $this->getKycSchema();
+        if (empty($schema)) {
+            return $this->sendError('Error', ['KYC schema not configured for this user type.']);
+        }
+
+        $success['kyc_form_data'] = $schema;
+        $success['user_type'] = auth()->user()->user_type;
+
         return $this->sendResponse($success,'success');
     }
 
@@ -142,7 +150,7 @@ class UserController extends ApiController{
                 }
                 $rules[$value->name] = 'required';
             }
-            
+
             if($value->type == 2){
                 $rules[$value->name] = 'image|mimes:png,jpg,jpeg|max:5120';
                 if(request("$value->name")){
@@ -150,7 +158,7 @@ class UserController extends ApiController{
                     unset($data[$value->name]);
                 $data['image'][$value->name] = $filename;
                 }
-                
+
             }
 
             if($value->type == 3){
@@ -162,7 +170,7 @@ class UserController extends ApiController{
 
         $validator = Validator::make($request->all(),$rules);
         if($validator->fails()){
-            return $this->sendError('Validation Error', $validator->errors());       
+            return $this->sendError('Validation Error', $validator->errors());
         }
 
         $user = auth()->user();
@@ -177,7 +185,7 @@ class UserController extends ApiController{
     {
         return $this->sendResponse(['qrcode_image' =>  generateQR(auth()->user()->email)],'QR code has been generated');
     }
-    
+
 
     public function transactions()
     {
@@ -199,7 +207,7 @@ class UserController extends ApiController{
         ];
         $success['remark'] = $remark;
         $success['search'] = $search;
-     
+
         return $this->sendResponse($success,'Transaction history');
 
     }
@@ -259,5 +267,14 @@ class UserController extends ApiController{
         $user->save();
         return $this->sendResponse(['success'],$msg);
     }
+    private function getKycSchema(): array
+    {
+        $user = auth()->user();
 
+        return match ((int) $user->user_type) {
+            1 => config('kyc.individual'),
+            2 => config('kyc.company'),
+            default => [],
+        };
+    }
 }

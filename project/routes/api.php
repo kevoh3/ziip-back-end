@@ -26,6 +26,7 @@ Route::get('module',   [FrontendController::class, 'moduleData']);
 
 Route::prefix('user')->middleware('maintenance')->group(function () {
     Route::post('login',                           [AuthController::class, 'login']);
+    Route::get('document-type',      [AuthController::class, 'documentType']);
     Route::post('register',                        [AuthController::class, 'register']);
     Route::post('forgot-password',                 [AuthController::class, 'forgotPasswordSubmit']);
     Route::post('forgot-password/verify-code',     [AuthController::class, 'verifyCodeSubmit']);
