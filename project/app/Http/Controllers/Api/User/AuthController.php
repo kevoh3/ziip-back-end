@@ -46,6 +46,13 @@ class AuthController extends ApiController
         if($validator->fails()){
             return $this->sendError('Validation Error', $validator->errors());
         }
+        // Format phone number using the same method as login
+        $fullPhoneNumber = $this->formatPhoneNumber($request->country_code, $request->phone);
+
+        // Check if phone number already exists
+        if (User::where('phone', $fullPhoneNumber)->exists()) {
+            return $this->sendError('Registration Error', ['Phone number is already registered.']);
+        }
 
         $data = $request->only('first_name','last_name','email','dial_code','phone','country','address','password');
 
@@ -53,7 +60,7 @@ class AuthController extends ApiController
 
         $countryData         = $countries->where('name',$request->country)->first();
         $currencyId          = $countryData->currency_id;
-        $data['phone']       = $request->dial_code.$request->phone;
+        $data['phone']       = $fullPhoneNumber;
         $data['password']    = bcrypt($request->password);
         $data['email_verified'] = $gs->is_verify == 1 ? 0:1;
 
@@ -102,6 +109,68 @@ class AuthController extends ApiController
      */
     public function login(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'country_code' => 'required|string',
+            'username' => 'required|string',
+            'password' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendError('Validation Error', $validator->errors());
+        }
+        $loginField = filter_var($request->username, FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
+        // Prepare the phone number if username is a phone
+        if ($loginField === 'phone') {
+            // Remove any non-numeric characters from phone number
+            $phoneNumber = preg_replace('/[^0-9]/', '', $request->username);
+
+            // Combine country code with phone number (remove leading zeros from phone)
+            $phoneNumber = ltrim($phoneNumber, '0');
+            $fullPhoneNumber = $this->formatPhoneNumber($request->country_code, $request->username);
+
+            $credentials = [
+                'phone' => $fullPhoneNumber,
+                'password' => $request->password
+            ];
+        } else {
+            // It's an email login
+            $credentials = [
+                'email' => $request->username,
+                'password' => $request->password
+            ];
+        }
+
+        // Attempt login
+        if (Auth::attempt($credentials)) {
+            $user = Auth::user();
+
+            // Get the general settings
+            $gs = Generalsetting::first();
+
+            $success['token'] = $user->createToken('wallet')->plainTextToken;
+            $success['user'] = new UserResource($user);
+
+            // Generate and store 2FA code if 2FA is enabled for the user
+            if ($gs->two_fa && $user->two_fa_status == 1) {
+                $code = randNum();
+                $user->two_fa_code = $code;
+                $user->save();
+
+                // Optional: Send 2FA code via SMS
+                // sendSMS($user->phone, 'Your OTP code is: ' . $code, $gs->contact_no);
+
+                $success['requires_2fa'] = true;
+                $success['message'] = 'Login successful. 2FA verification required.';
+            } else {
+                $success['requires_2fa'] = false;
+                $success['message'] = 'Login successful.';
+            }
+
+            return $this->sendResponse($success, $success['message']);
+        } else {
+            return $this->sendError('Authentication Error', ['Invalid credentials provided.'], 401);
+        }
+
         if(Auth::attempt(['email' => $request->email, 'password' => $request->password])){
             $user = Auth::user();
             $success['token'] =  $user->createToken('wallet')->plainTextToken;
@@ -334,6 +403,27 @@ class AuthController extends ApiController
             ->map(fn($type) => $type->value)
             ->values();
         return $this->sendResponse($data,'Document Type');
+    }
+    private function formatPhoneNumber($countryCode, $phoneNumber)
+    {
+        // Remove all non-numeric characters
+        $countryCode = preg_replace('/[^0-9]/', '', $countryCode);
+        $phoneNumber = preg_replace('/[^0-9]/', '', $phoneNumber);
+
+        // Remove country code prefix if it already exists in phone number
+        // If phone number starts with the country code, remove it
+        if (str_starts_with($phoneNumber, $countryCode)) {
+            $phoneNumber = substr($phoneNumber, strlen($countryCode));
+        }
+
+        // Remove leading zero(s) from phone number
+        $phoneNumber = ltrim($phoneNumber, '0');
+
+        // Ensure country code doesn't have leading plus or zeros
+        $countryCode = ltrim($countryCode, '0');
+
+        // Return formatted phone number without plus sign
+        return $countryCode . $phoneNumber;
     }
 
 }

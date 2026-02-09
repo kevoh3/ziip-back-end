@@ -4,7 +4,9 @@
 /public/hot
 /public/storage
 /storage/*.key
+
 !/storage/app/data/Kenya-Counties-SubCounties-and-Wards.json
+
 /vendor
 .env
 .env.backup
