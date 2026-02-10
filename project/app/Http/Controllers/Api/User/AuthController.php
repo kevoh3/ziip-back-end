@@ -404,12 +404,23 @@ class AuthController extends ApiController
         $setting['two_fa'] = $main->two_fa;
         return $this->sendResponse($setting,'Setting Data');
     }
+//    public function documentType()
+//    {
+//        $data['document_types'] = collect(DocumentType::cases())
+//            ->map(fn($type) => $type->value)
+//            ->values();
+//        return $this->sendResponse($data,'Document Type');
+//    }
     public function documentType()
     {
         $data['document_types'] = collect(DocumentType::cases())
-            ->map(fn($type) => $type->value)
+            ->map(fn($type) => [
+                'value' => $type->value,
+                'label' => $type->label(),
+            ])
             ->values();
-        return $this->sendResponse($data,'Document Type');
+
+        return $this->sendResponse($data, 'Document Type');
     }
     private function formatPhoneNumber($countryCode, $phoneNumber)
     {

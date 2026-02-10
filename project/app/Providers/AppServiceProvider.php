@@ -16,6 +16,7 @@ use App\Models\Generalsetting;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Validator;
+use App\Services\Choice\ChoiceOnboardingService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,7 +27,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        //
+        $this->app->singleton(ChoiceOnboardingService::class, function () {
+            return ChoiceOnboardingService::fromConfig();
+        });
     }
 
     /**
@@ -78,6 +81,6 @@ class AppServiceProvider extends ServiceProvider
         	return in_array(explode('@', $parameters[0])[1] , $allowedEmailDomains);
         });
 
-       
+
     }
 }

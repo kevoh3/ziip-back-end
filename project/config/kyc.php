@@ -29,9 +29,8 @@ return [
             'type' => 'select',
             'required' => true,
             'options' => [
-                ['value' => 'M', 'label' => 'Male'],
-                ['value' => 'F', 'label' => 'Female'],
-                ['value' => 'O', 'label' => 'Other'],
+                ['value' => '1', 'label' => 'Male'],
+                ['value' => '0', 'label' => 'Female'],
             ],
         ],
         [
@@ -40,8 +39,43 @@ return [
             'type' => 'select',
             'required' => true,
             'options' => [
-                ['value' => 'NID', 'label' => 'National ID'],
-                ['value' => 'PASSPORT', 'label' => 'Passport'],
+                ['value' => '101', 'label' => 'National ID (Kenya)'],
+                ['value' => '102', 'label' => 'Alien ID (Kenya)'],
+                ['value' => '103', 'label' => 'Passport'],
+            ],
+        ],
+        [
+            'key' => 'kra_pin',
+            'label' => 'KRA PIN / Tax Number',
+            'type' => 'text',
+            'required' => true,
+        ],
+        [
+            'key' => 'employment_status',
+            'label' => 'Employment Status',
+            'type' => 'select',
+            'required' => true,
+            'options' => [
+                ['value' => 'A', 'label' => 'Employee'],
+                ['value' => 'B', 'label' => 'Self employed'],
+                ['value' => 'C', 'label' => 'Unemployed'],
+                ['value' => 'D', 'label' => 'Employer'],
+                ['value' => 'E', 'label' => 'Student'],
+                ['value' => 'F', 'label' => 'Others'],
+            ],
+        ],
+        [
+            'key' => 'monthly_income',
+            'label' => 'Monthly Income',
+            'type' => 'select',
+            'required' => true,
+            'options' => [
+                ['value' => 'A', 'label' => 'Less than Ksh. 14,999'],
+                ['value' => 'B', 'label' => 'Ksh. 15,000-24,999'],
+                ['value' => 'C', 'label' => 'Ksh. 25,000-39,999'],
+                ['value' => 'D', 'label' => 'Ksh. 40,000-59,999'],
+                ['value' => 'E', 'label' => 'Ksh. 60,000-84,999'],
+                ['value' => 'F', 'label' => 'Above Ksh. 85,000'],
             ],
         ],
         [

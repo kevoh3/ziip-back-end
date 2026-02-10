@@ -17,13 +17,16 @@ use App\Http\Resources\User\UserResource;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\ApiController;
 use App\Http\Resources\UserResource as User;
-
+use App\Services\Choice\ChoiceOnboardingService;
 class UserController extends ApiController{
 
-    public function __construct(UserResource $resource)
-    {
+    public function __construct(
+        UserResource $resource,
+        private readonly ChoiceOnboardingService $choiceOnboarding,
+    ) {
         $this->resource = $resource;
     }
+
 
     public function trnx()
     {
@@ -137,48 +140,198 @@ class UserController extends ApiController{
 
     public function kycFormSubmit(Request $request)
     {
-        if(auth()->user()->kyc_status == 2) return $this->sendError('Error',['You have already submitted the KYC data.']);
-        if(auth()->user()->kyc_status == 1) return $this->sendError('Error',['Your KYC data is already verified.']);
+        $user = auth()->user();
 
-        $data = $request->except('_token');
-        $kycForm = KycForm::where('user_type',1)->get();
-        $rules = [];
-        foreach ($kycForm as $value) {
-            if($value->required == 1){
-                if($value->type == 2){
-                    $rules[$value->name] = 'required|image|mimes:png,jpg,jpeg|max:5120';
-                }
-                $rules[$value->name] = 'required';
-            }
+        if ($user->kyc_status == 2) return $this->sendError('Error', ['You have already submitted the KYC data.']);
+        if ($user->kyc_status == 1) return $this->sendError('Error', ['Your KYC data is already verified.']);
 
-            if($value->type == 2){
-                $rules[$value->name] = 'image|mimes:png,jpg,jpeg|max:5120';
-                if(request("$value->name")){
-                    $filename = MediaHelper::handleMakeImage(request("$value->name"));
-                    unset($data[$value->name]);
-                $data['image'][$value->name] = $filename;
-                }
+        $schema = $this->getKycSchema();
 
-            }
-
-            if($value->type == 3){
-                unset($data[$value->name]);
-                $data['details'][$value->name] = request("$value->name");
-            }
-
+        if (!is_array($schema) || count($schema) === 0) {
+            return $this->sendError('KYC Configuration Error', ['KYC form is not available for this account type.']);
         }
 
-        $validator = Validator::make($request->all(),$rules);
-        if($validator->fails()){
+        $rules = [];
+        $data  = ['details' => [], 'image' => []];
+
+        foreach ($schema as $field) {
+            $key      = $field['key'] ?? null;
+            $type     = strtolower((string) ($field['type'] ?? 'text'));
+            $required = (bool) ($field['required'] ?? false);
+
+            if (!$key) continue;
+
+            $r = ['bail', $required ? 'required' : 'nullable'];
+
+            if ($type === 'image') {
+                $r[] = 'image';
+                // Choice supports jpg/jpeg only
+                $r[] = 'mimes:jpg,jpeg';
+                $r[] = 'max:5120';
+            } elseif ($type === 'date') {
+                $r[] = 'date';
+            } elseif ($type === 'select') {
+                $values = collect($field['options'] ?? [])->pluck('value')->toArray();
+                if (!empty($values)) $r[] = 'in:' . implode(',', $values);
+                $r[] = 'string';
+            } else {
+                $r[] = 'string';
+            }
+
+            $rules[$key] = implode('|', $r);
+        }
+
+        // ---- Conditional requirements for individual docs (Choice rules) ----
+        if ((int) $user->user_type === 1) {
+            $idType = (string) $request->input('id_type'); // 101/102/103
+
+            // selfie always required
+            $rules['selfie'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+
+            if (in_array($idType, ['101', '102'], true)) {
+                // National ID / Alien ID require front + back
+                $rules['id_front'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+                $rules['id_back']  = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+            } elseif ($idType === '103') {
+                // Passport requires only one photo (we use id_front as passport photo)
+                $rules['id_front'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+                $rules['id_back']  = 'bail|nullable|image|mimes:jpg,jpeg|max:5120';
+            }
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
             return $this->sendError('Validation Error', $validator->errors());
         }
 
-        $user = auth()->user();
+        foreach ($schema as $field) {
+            $key  = $field['key'] ?? null;
+            $type = strtolower((string) ($field['type'] ?? 'text'));
+            if (!$key) continue;
+
+            if ($type === 'image') {
+                if ($request->hasFile($key)) {
+                    $filename = MediaHelper::handleMakeImage($request->file($key));
+                    $data['image'][$key] = $filename;
+                }
+            } else {
+                $val = $request->input($key);
+                if ($val !== null && $val !== '') {
+                    $data['details'][$key] = $val;
+                }
+            }
+        }
+
+        // optional metadata
+        $data['_meta'] = [
+            'user_type' => (int) $user->user_type,
+            'form_type' => ((int) $user->user_type === 1) ? 'individual' : 'company',
+            'submitted_at' => now()->toISOString(),
+        ];
+
         $user->kyc_info = $data;
-        $user->kyc_status = 2;
+        $user->kyc_status = 2; // pending/submitted
         $user->save();
 
-        return $this->sendResponse(['success'],'KYC data has been submitted for review.');
+        // ---- Choice onboarding (individual only for now) ----
+        if ((int) $user->user_type === 1) {
+            try {
+                $details = $data['details'] ?? [];
+                $images  = $data['image'] ?? [];
+
+                $idType = (string) ($details['id_type'] ?? '');
+                $gender = isset($details['gender']) ? (int) $details['gender'] : null;
+
+                if (!in_array($idType, ['101', '102', '103'], true)) {
+                    throw new \RuntimeException('Invalid idType for Choice. Must be 101/102/103.');
+                }
+                if (!in_array($gender, [0, 1], true)) {
+                    throw new \RuntimeException('Invalid gender for Choice. Must be 0 (Female) or 1 (Male).');
+                }
+
+                $phone = $this->parsePhoneForChoice((string) $user->phone, $user->country);
+
+                $payload = [
+                    'userId'           => (string) $user->id,
+                    'firstName'        => (string) ($details['first_name'] ?? ''),
+                    'middleName'       => (string) ($details['middle_name'] ?? ''),
+                    'lastName'         => (string) ($details['last_name'] ?? ''),
+                    'birthday'         => (string) ($details['date_of_birth'] ?? ''), // yyyy-MM-dd
+                    'address'          => (string) ($user->address ?? ''),
+                    'gender'           => $gender, // 0/1
+                    'countryCode'      => (string) $phone['countryCode'],
+                    'mobile'           => (string) $phone['mobile'],
+                    'email'            => (string) ($user->email ?? ''),
+                    'idType'           => $idType,
+                    'idNumber'         => (string) ($details['id_number'] ?? ''),
+                    'kraPin'           => (string) ($details['kra_pin'] ?? ''),
+                    'employmentStatus' => (string) ($details['employment_status'] ?? ''),
+                    'monthlyIncome'    => (string) ($details['monthly_income'] ?? ''),
+                ];
+
+                $choiceResp = $this->choiceOnboarding->submitOnboarding($payload);
+
+                $onboardingRequestId =
+                    data_get($choiceResp, 'onboardingRequestId')
+                    ?? data_get($choiceResp, 'data.onboardingRequestId')
+                    ?? null;
+
+                if (!$onboardingRequestId) {
+                    throw new \RuntimeException('Choice did not return onboardingRequestId.');
+                }
+
+                $uploadResults = [];
+
+                foreach ($images as $key => $filename) {
+                    $mediaType = $this->choiceMediaTypeForKey($key, $idType);
+                    if (!$mediaType) {
+                        $uploadResults[$key] = ['status' => 'SKIPPED', 'reason' => 'no_media_mapping'];
+                        continue;
+                    }
+
+                    $path = public_path('assets/images/' . $filename);
+                    if (!file_exists($path)) {
+                        $uploadResults[$key] = ['status' => 'SKIPPED', 'reason' => 'file_missing', 'filename' => $filename];
+                        continue;
+                    }
+
+                    $base64 = base64_encode(file_get_contents($path));
+
+                    $uploadResults[$key] = $this->choiceOnboarding->uploadMedia(
+                        $onboardingRequestId,
+                        $mediaType,
+                        $base64
+                    );
+                }
+
+                $kyc = $user->kyc_info ?? [];
+                $kyc['choice'] = [
+                    'status' => 'SUBMITTED',
+                    'onboardingRequestId' => $onboardingRequestId,
+                    'uploaded' => $uploadResults,
+                    'updated_at' => now()->toISOString(),
+                ];
+                $user->kyc_info = $kyc;
+                $user->save();
+
+            } catch (\Throwable $e) {
+                \Log::error('Choice onboarding failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $kyc = $user->kyc_info ?? [];
+                $kyc['choice'] = [
+                    'status' => 'FAILED',
+                    'error' => $e->getMessage(),
+                    'updated_at' => now()->toISOString(),
+                ];
+                $user->kyc_info = $kyc;
+                $user->save();
+            }
+        }
+
+        return $this->sendResponse(['success' => true], 'KYC data has been submitted for review.');
     }
 
     public function generateQR()
@@ -276,5 +429,65 @@ class UserController extends ApiController{
             2 => config('kyc.company'),
             default => [],
         };
+    }
+    private function choiceMediaTypeForKey(string $key, string $idType): ?string
+    {
+        // Documents table:
+        // KYCF00001 National ID front (idType 101)
+        // KYCF00002 National ID back  (idType 101)
+        // KYCF00003 Passport photo    (idType 103)
+        // KYCF00004 Alien ID front    (idType 102)
+        // KYCF00005 Alien ID back     (idType 102)
+        // KYCF00006 Selfie            (always)
+
+        if ($key === 'selfie') return 'KYCF00006';
+
+        if ($idType === '101') {
+            return match ($key) {
+                'id_front' => 'KYCF00001',
+                'id_back'  => 'KYCF00002',
+                default    => null,
+            };
+        }
+
+        if ($idType === '102') {
+            return match ($key) {
+                'id_front' => 'KYCF00004',
+                'id_back'  => 'KYCF00005',
+                default    => null,
+            };
+        }
+
+        if ($idType === '103') {
+            // Use id_front as passport photo
+            return $key === 'id_front' ? 'KYCF00003' : null;
+        }
+
+        return null;
+    }
+    private function parsePhoneForChoice(string $phone, ?string $countryName = null): array
+    {
+        $digits = preg_replace('/\D+/', '', $phone);
+        if (str_starts_with($digits, '00')) $digits = substr($digits, 2);
+
+        // extend as needed
+        $map = [
+            'Kenya' => '254',
+            'Uganda' => '256',
+            'Tanzania' => '255',
+            'Rwanda' => '250',
+            'Bangladesh' => '880',
+        ];
+
+        $cc = ($countryName && isset($map[$countryName])) ? $map[$countryName] : substr($digits, 0, 3);
+
+        if (str_starts_with($digits, $cc)) {
+            $rest = substr($digits, strlen($cc));
+            $mobile = '0' . ltrim($rest, '0');
+        } else {
+            $mobile = $digits;
+        }
+
+        return ['countryCode' => $cc, 'mobile' => $mobile];
     }
 }
