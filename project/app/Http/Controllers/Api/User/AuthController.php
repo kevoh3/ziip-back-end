@@ -8,6 +8,7 @@ use App\Models\Country;
 use Illuminate\Http\Request;
 use App\Models\Generalsetting;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\ApiController;
 use App\Http\Resources\UserResource;
@@ -21,6 +22,7 @@ class AuthController extends ApiController
      */
     public function register(Request $request)
     {
+        Log::info('inputdata',$request->all());
         $gs        = Generalsetting::first();
         $countries = Country::query();
         $name      = $countries->pluck('name')->toArray();
@@ -47,7 +49,12 @@ class AuthController extends ApiController
             return $this->sendError('Validation Error', $validator->errors());
         }
         // Format phone number using the same method as login
-        $fullPhoneNumber = $this->formatPhoneNumber($request->country_code, $request->phone);
+        $countryData         = $countries->where('name',$request->country)->first();
+        $currencyId          = $countryData->currency_id;
+        $country_code=$countryData->dial_code;
+        $fullPhoneNumber = $this->formatPhoneNumber($country_code, $request->phone);
+        Log::info('fullmobile '.$fullPhoneNumber);
+        Log::info('fullmobile '.$fullPhoneNumber);
 
         // Check if phone number already exists
         if (User::where('phone', $fullPhoneNumber)->exists()) {
@@ -58,8 +65,7 @@ class AuthController extends ApiController
 
         $data['name'] = strtoupper($request->first_name . ' ' . $request->last_name);
 
-        $countryData         = $countries->where('name',$request->country)->first();
-        $currencyId          = $countryData->currency_id;
+
         $data['phone']       = $fullPhoneNumber;
         $data['password']    = bcrypt($request->password);
         $data['email_verified'] = $gs->is_verify == 1 ? 0:1;
