@@ -37,6 +37,7 @@ class AuthController extends ApiController
             'email'                     => ['required','email','unique:users',$gs->allowed_email != null ? 'email_domain:'.$request->email:''],
             'dial_code'                 => 'required',
             'phone'                     => 'required',
+            'document_type'                     => 'required',
             'country'                   => 'required|in:'.implode(',',$name),
             'address'                   => 'required',
             'password'                  => 'required|min:6|confirmed',
