@@ -20,7 +20,7 @@ class AuthController extends ApiController
      *
      * @return \Illuminate\Http\Response
      */
-    public function register(Request $request)
+    public function            register(Request $request)
     {
         Log::info('inputdata',$request->all());
         $gs        = Generalsetting::first();
@@ -37,7 +37,7 @@ class AuthController extends ApiController
             'email'                     => ['required','email','unique:users',$gs->allowed_email != null ? 'email_domain:'.$request->email:''],
             'dial_code'                 => 'required',
             'phone'                     => 'required',
-            'document_type'                     => 'required',
+//            'document_type'                     => 'required',
             'country'                   => 'required|in:'.implode(',',$name),
             'address'                   => 'required',
             'password'                  => 'required|min:6|confirmed',
@@ -111,7 +111,7 @@ class AuthController extends ApiController
 
     /**
      * Login api
-     *
+     *it
      * @return \Illuminate\Http\Response
      */
     public function login(Request $request)
