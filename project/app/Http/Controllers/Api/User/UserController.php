@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\User;
 
 
+use Illuminate\Support\Facades\Log;
 use Image;
 use App\Models\Wallet;
 use App\Models\Deposit;
@@ -268,8 +269,10 @@ class UserController extends ApiController{
                     'employmentStatus' => (string) ($details['employment_status'] ?? ''),
                     'monthlyIncome'    => (string) ($details['monthly_income'] ?? ''),
                 ];
+                Log::info(json_encode($payload));
 
                 $choiceResp = $this->choiceOnboarding->submitOnboarding($payload);
+                Log::info('response is',['response' => $choiceResp]);
 
                 $onboardingRequestId =
                     data_get($choiceResp, 'onboardingRequestId')
