@@ -487,7 +487,6 @@ class UserController extends ApiController{
         } else {
             $mobile = $digits;
         }
-
         return ['countryCode' => $cc, 'mobile' => $mobile];
     }
 }
