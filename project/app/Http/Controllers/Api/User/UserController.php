@@ -261,7 +261,7 @@ class UserController extends ApiController{
                     'address'          => (string) ($user->address ?? ''),
                     'gender'           => $gender, // 0/1
                     'countryCode'      => (string) $phone['countryCode'],
-                    'mobile'           => (string) $user->phone,
+                    'mobile'           => (string) $phone['mobile'],
                     'email'            => (string) ($user->email ?? ''),
                     'idType'           => $idType,
                     'idNumber'         => (string) ($details['id_number'] ?? ''),
