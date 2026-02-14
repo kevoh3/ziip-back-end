@@ -250,6 +250,7 @@ class UserController extends ApiController{
                     throw new \RuntimeException('Invalid gender for Choice. Must be 0 (Female) or 1 (Male).');
                 }
 
+
                 $phone = $this->parsePhoneForChoice((string) $user->phone, $user->country);
 
                 $payload = [
@@ -269,6 +270,12 @@ class UserController extends ApiController{
                     'employmentStatus' => (string) ($details['employment_status'] ?? ''),
                     'monthlyIncome'    => (string) ($details['monthly_income'] ?? ''),
                 ];
+                Log::info('Choice phone computed', [
+                    'db_phone' => $user->phone,
+                    'country' => $user->country,
+                    'countryCode' => $phone['countryCode'],
+                    'mobile' => $phone['mobile'],
+                ]);
                 Log::info('payload  is',['data'=>$payload]);
 
                 $choiceResp = $this->choiceOnboarding->submitOnboarding($payload);
@@ -468,12 +475,15 @@ class UserController extends ApiController{
 
         return null;
     }
+
     private function parsePhoneForChoice(string $phone, ?string $countryName = null): array
     {
-        $digits = preg_replace('/\D+/', '', $phone);
-        if (str_starts_with($digits, '00')) $digits = substr($digits, 2);
+        $digits = preg_replace('/\D+/', '', (string) $phone) ?? '';
 
-        // extend as needed
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+        }
+
         $map = [
             'Kenya' => '254',
             'Uganda' => '256',
@@ -482,14 +492,30 @@ class UserController extends ApiController{
             'Bangladesh' => '880',
         ];
 
-        $cc = ($countryName && isset($map[$countryName])) ? $map[$countryName] : substr($digits, 0, 3);
+        $cc = ($countryName && isset($map[$countryName])) ? $map[$countryName] : '';
 
-        if (str_starts_with($digits, $cc)) {
-            $rest = substr($digits, strlen($cc));
-            $mobile = '0' . ltrim($rest, '0');
+        // If already contains country code, remove it
+        if ($cc !== '' && str_starts_with($digits, $cc)) {
+            $local = substr($digits, strlen($cc));
         } else {
-            $mobile = $digits;
+            // If kenya-like number begins with 254 but country name missing
+            if (str_starts_with($digits, '254')) {
+                $cc = '254';
+                $local = substr($digits, 3);
+            } else {
+                $local = $digits;
+            }
         }
-        return ['countryCode' => $cc, 'mobile' => $mobile];
+
+        // Remove leading zeros (0701.. -> 701..)
+        $local = ltrim($local, '0');
+
+        // Kenya: ensure we send 9-digit mobile (e.g. 701209288)
+        if ($cc === '254') {
+            // if someone passed 10 digits like 7012092880 or other, keep last 9 as fallback
+            if (strlen($local) > 9) $local = substr($local, -9);
+        }
+
+        return ['countryCode' => $cc, 'mobile' => $local];
     }
 }
