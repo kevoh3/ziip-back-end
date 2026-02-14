@@ -139,6 +139,212 @@ class UserController extends ApiController{
         return $this->sendResponse($success,'success');
     }
 
+//    public function kycFormSubmit(Request $request)
+//    {
+//        $user = auth()->user();
+//
+//        if ($user->kyc_status == 2) return $this->sendError('Error', ['You have already submitted the KYC data.']);
+//        if ($user->kyc_status == 1) return $this->sendError('Error', ['Your KYC data is already verified.']);
+//
+//        $schema = $this->getKycSchema();
+//
+//        if (!is_array($schema) || count($schema) === 0) {
+//            return $this->sendError('KYC Configuration Error', ['KYC form is not available for this account type.']);
+//        }
+//
+//        $rules = [];
+//        $data  = ['details' => [], 'image' => []];
+//
+//        foreach ($schema as $field) {
+//            $key      = $field['key'] ?? null;
+//            $type     = strtolower((string) ($field['type'] ?? 'text'));
+//            $required = (bool) ($field['required'] ?? false);
+//
+//            if (!$key) continue;
+//
+//            $r = ['bail', $required ? 'required' : 'nullable'];
+//
+//            if ($type === 'image') {
+//                $r[] = 'image';
+//                // Choice supports jpg/jpeg only
+//                $r[] = 'mimes:jpg,jpeg';
+//                $r[] = 'max:5120';
+//            } elseif ($type === 'date') {
+//                $r[] = 'date';
+//            } elseif ($type === 'select') {
+//                $values = collect($field['options'] ?? [])->pluck('value')->toArray();
+//                if (!empty($values)) $r[] = 'in:' . implode(',', $values);
+//                $r[] = 'string';
+//            } else {
+//                $r[] = 'string';
+//            }
+//
+//            $rules[$key] = implode('|', $r);
+//        }
+//
+//        // ---- Conditional requirements for individual docs (Choice rules) ----
+//        if ((int) $user->user_type === 1) {
+//            $idType = (string) $request->input('id_type'); // 101/102/103
+//
+//            // selfie always required
+//            $rules['selfie'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+//
+//            if (in_array($idType, ['101', '102'], true)) {
+//                // National ID / Alien ID require front + back
+//                $rules['id_front'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+//                $rules['id_back']  = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+//            } elseif ($idType === '103') {
+//                // Passport requires only one photo (we use id_front as passport photo)
+//                $rules['id_front'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
+//                $rules['id_back']  = 'bail|nullable|image|mimes:jpg,jpeg|max:5120';
+//            }
+//        }
+//
+//        $validator = Validator::make($request->all(), $rules);
+//        if ($validator->fails()) {
+//            return $this->sendError('Validation Error', $validator->errors());
+//        }
+//
+//        foreach ($schema as $field) {
+//            $key  = $field['key'] ?? null;
+//            $type = strtolower((string) ($field['type'] ?? 'text'));
+//            if (!$key) continue;
+//
+//            if ($type === 'image') {
+//                if ($request->hasFile($key)) {
+//                    $filename = MediaHelper::handleMakeImage($request->file($key));
+//                    $data['image'][$key] = $filename;
+//                }
+//            } else {
+//                $val = $request->input($key);
+//                if ($val !== null && $val !== '') {
+//                    $data['details'][$key] = $val;
+//                }
+//            }
+//        }
+//
+//        // optional metadata
+//        $data['_meta'] = [
+//            'user_type' => (int) $user->user_type,
+//            'form_type' => ((int) $user->user_type === 1) ? 'individual' : 'company',
+//            'submitted_at' => now()->toISOString(),
+//        ];
+//
+//        $user->kyc_info = $data;
+//        $user->kyc_status = 2; // pending/submitted
+//        $user->save();
+//
+//        // ---- Choice onboarding (individual only for now) ----
+//        if ((int) $user->user_type === 1) {
+//            try {
+//                $details = $data['details'] ?? [];
+//                $images  = $data['image'] ?? [];
+//
+//                $idType = (string) ($details['id_type'] ?? '');
+//                $gender = isset($details['gender']) ? (int) $details['gender'] : null;
+//
+//                if (!in_array($idType, ['101', '102', '103'], true)) {
+//                    throw new \RuntimeException('Invalid idType for Choice. Must be 101/102/103.');
+//                }
+//                if (!in_array($gender, [0, 1], true)) {
+//                    throw new \RuntimeException('Invalid gender for Choice. Must be 0 (Female) or 1 (Male).');
+//                }
+//
+//
+//                $phone = $this->parsePhoneForChoice((string) $user->phone, $user->country);
+//
+//                $payload = [
+//                    'userId'           => (string) $user->id,
+//                    'firstName'        => (string) ($details['first_name'] ?? ''),
+//                    'middleName'       => (string) ($details['middle_name'] ?? ''),
+//                    'lastName'         => (string) ($details['last_name'] ?? ''),
+//                    'birthday'         => (string) ($details['date_of_birth'] ?? ''), // yyyy-MM-dd
+//                    'address'          => (string) ($user->address ?? ''),
+//                    'gender'           => $gender, // 0/1
+//                    'countryCode'      => (string) $phone['countryCode'],
+//                    'mobile'           => (string) $phone['mobile'],
+//                    'email'            => (string) ($user->email ?? ''),
+//                    'idType'           => $idType,
+//                    'idNumber'         => (string) ($details['id_number'] ?? ''),
+//                    'kraPin'           => (string) ($details['kra_pin'] ?? ''),
+//                    'employmentStatus' => (string) ($details['employment_status'] ?? ''),
+//                    'monthlyIncome'    => (string) ($details['monthly_income'] ?? ''),
+//                ];
+//                Log::info('Choice phone computed', [
+//                    'db_phone' => $user->phone,
+//                    'country' => $user->country,
+//                    'countryCode' => $phone['countryCode'],
+//                    'mobile' => $phone['mobile'],
+//                ]);
+//                Log::info('payload  is',['data'=>$payload]);
+//
+//                $choiceResp = $this->choiceOnboarding->submitOnboarding($payload);
+//                Log::info('response is',['response' => $choiceResp]);
+//
+//                $onboardingRequestId =
+//                    data_get($choiceResp, 'onboardingRequestId')
+//                    ?? data_get($choiceResp, 'data.onboardingRequestId')
+//                    ?? null;
+//
+//                if (!$onboardingRequestId) {
+//                    throw new \RuntimeException('Choice did not return onboardingRequestId.');
+//                }
+//
+//                $uploadResults = [];
+//
+//                foreach ($images as $key => $filename) {
+//                    $mediaType = $this->choiceMediaTypeForKey($key, $idType);
+//                    if (!$mediaType) {
+//                        $uploadResults[$key] = ['status' => 'SKIPPED', 'reason' => 'no_media_mapping'];
+//                        continue;
+//                    }
+//
+//                    //$path = public_path('assets/images/' . $filename);
+//                    $path = base_path('../assets/images/' . $filename);
+//
+//                    if (!file_exists($path)) {
+//                        $uploadResults[$key] = ['status' => 'SKIPPED', 'reason' => 'file_missing', 'filename' => $filename];
+//                        continue;
+//                    }
+//
+//                    $base64 = base64_encode(file_get_contents($path));
+//
+//                    $uploadResults[$key] = $this->choiceOnboarding->uploadMedia(
+//                        $onboardingRequestId,
+//                        $mediaType,
+//                        $base64
+//                    );
+//                }
+//
+//                $kyc = $user->kyc_info ?? [];
+//                $kyc['choice'] = [
+//                    'status' => 'SUBMITTED',
+//                    'onboardingRequestId' => $onboardingRequestId,
+//                    'uploaded' => $uploadResults,
+//                    'updated_at' => now()->toISOString(),
+//                ];
+//                $user->kyc_info = $kyc;
+//                $user->save();
+//
+//            } catch (\Throwable $e) {
+//                \Log::error('Choice onboarding failed', [
+//                    'user_id' => $user->id,
+//                    'error' => $e->getMessage(),
+//                ]);
+//
+//                $kyc = $user->kyc_info ?? [];
+//                $kyc['choice'] = [
+//                    'status' => 'FAILED',
+//                    'error' => $e->getMessage(),
+//                    'updated_at' => now()->toISOString(),
+//                ];
+//                $user->kyc_info = $kyc;
+//                $user->save();
+//            }
+//        }
+//
+//        return $this->sendResponse(['success' => true], 'KYC data has been submitted for review.');
+//    }
     public function kycFormSubmit(Request $request)
     {
         $user = auth()->user();
@@ -147,7 +353,6 @@ class UserController extends ApiController{
         if ($user->kyc_status == 1) return $this->sendError('Error', ['Your KYC data is already verified.']);
 
         $schema = $this->getKycSchema();
-
         if (!is_array($schema) || count($schema) === 0) {
             return $this->sendError('KYC Configuration Error', ['KYC form is not available for this account type.']);
         }
@@ -166,8 +371,7 @@ class UserController extends ApiController{
 
             if ($type === 'image') {
                 $r[] = 'image';
-                // Choice supports jpg/jpeg only
-                $r[] = 'mimes:jpg,jpeg';
+                $r[] = 'mimes:jpg,jpeg';  // Choice supports jpg/jpeg
                 $r[] = 'max:5120';
             } elseif ($type === 'date') {
                 $r[] = 'date';
@@ -186,15 +390,12 @@ class UserController extends ApiController{
         if ((int) $user->user_type === 1) {
             $idType = (string) $request->input('id_type'); // 101/102/103
 
-            // selfie always required
             $rules['selfie'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
 
             if (in_array($idType, ['101', '102'], true)) {
-                // National ID / Alien ID require front + back
                 $rules['id_front'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
                 $rules['id_back']  = 'bail|required|image|mimes:jpg,jpeg|max:5120';
             } elseif ($idType === '103') {
-                // Passport requires only one photo (we use id_front as passport photo)
                 $rules['id_front'] = 'bail|required|image|mimes:jpg,jpeg|max:5120';
                 $rules['id_back']  = 'bail|nullable|image|mimes:jpg,jpeg|max:5120';
             }
@@ -205,6 +406,7 @@ class UserController extends ApiController{
             return $this->sendError('Validation Error', $validator->errors());
         }
 
+        // Build stored structure
         foreach ($schema as $field) {
             $key  = $field['key'] ?? null;
             $type = strtolower((string) ($field['type'] ?? 'text'));
@@ -223,7 +425,6 @@ class UserController extends ApiController{
             }
         }
 
-        // optional metadata
         $data['_meta'] = [
             'user_type' => (int) $user->user_type,
             'form_type' => ((int) $user->user_type === 1) ? 'individual' : 'company',
@@ -250,7 +451,6 @@ class UserController extends ApiController{
                     throw new \RuntimeException('Invalid gender for Choice. Must be 0 (Female) or 1 (Male).');
                 }
 
-
                 $phone = $this->parsePhoneForChoice((string) $user->phone, $user->country);
 
                 $payload = [
@@ -270,53 +470,89 @@ class UserController extends ApiController{
                     'employmentStatus' => (string) ($details['employment_status'] ?? ''),
                     'monthlyIncome'    => (string) ($details['monthly_income'] ?? ''),
                 ];
+
                 Log::info('Choice phone computed', [
+                    'user_id' => $user->id,
                     'db_phone' => $user->phone,
                     'country' => $user->country,
                     'countryCode' => $phone['countryCode'],
                     'mobile' => $phone['mobile'],
                 ]);
-                Log::info('payload  is',['data'=>$payload]);
+                Log::info('Choice submitOnboarding payload', ['user_id' => $user->id, 'data' => $payload]);
 
                 $choiceResp = $this->choiceOnboarding->submitOnboarding($payload);
-                Log::info('response is',['response' => $choiceResp]);
+                Log::info('Choice submitOnboarding response', ['user_id' => $user->id, 'response' => $choiceResp]);
 
-                $onboardingRequestId =
-                    data_get($choiceResp, 'onboardingRequestId')
-                    ?? data_get($choiceResp, 'data.onboardingRequestId')
+                // Response shape is flat: data.onboardingRequestId
+                $onboardingRequestId = data_get($choiceResp, 'data.onboardingRequestId')
+                    ?? data_get($choiceResp, 'onboardingRequestId')
                     ?? null;
 
                 if (!$onboardingRequestId) {
                     throw new \RuntimeException('Choice did not return onboardingRequestId.');
                 }
 
+                // save to dedicated columns
+                $user->choice_onboarding_request_id = $onboardingRequestId;
+                $user->choice_onboarding_status = 'SUBMITTED';
+                $user->choice_onboarding_updated_at = now();
+                $user->save();
+
                 $uploadResults = [];
 
                 foreach ($images as $key => $filename) {
                     $mediaType = $this->choiceMediaTypeForKey($key, $idType);
+
                     if (!$mediaType) {
                         $uploadResults[$key] = ['status' => 'SKIPPED', 'reason' => 'no_media_mapping'];
                         continue;
                     }
 
-                    $path = public_path('assets/images/' . $filename);
+                    $path = base_path('../assets/images/' . $filename);
+
                     if (!file_exists($path)) {
-                        $uploadResults[$key] = ['status' => 'SKIPPED', 'reason' => 'file_missing', 'filename' => $filename];
+                        $uploadResults[$key] = [
+                            'status' => 'SKIPPED',
+                            'reason' => 'file_missing',
+                            'filename' => $filename,
+                            'path' => $path
+                        ];
                         continue;
                     }
 
+                    Log::info('Choice uploadMedia request', [
+                        'user_id' => $user->id,
+                        'onboardingRequestId' => $onboardingRequestId,
+                        'key' => $key,
+                        'mediaType' => $mediaType,
+                        'filename' => $filename,
+                        'path' => $path,
+                        'size' => filesize($path),
+                    ]);
+
                     $base64 = base64_encode(file_get_contents($path));
 
-                    $uploadResults[$key] = $this->choiceOnboarding->uploadMedia(
-                        $onboardingRequestId,
-                        $mediaType,
-                        $base64
-                    );
+                    $res = $this->choiceOnboarding->uploadMedia($onboardingRequestId, $mediaType, $base64);
+
+                    Log::info('Choice uploadMedia response', [
+                        'user_id' => $user->id,
+                        'key' => $key,
+                        'mediaType' => $mediaType,
+                        'response' => $res,
+                    ]);
+
+                    $uploadResults[$key] = $res;
                 }
 
+                $allOk = collect($uploadResults)->every(fn($r) => data_get($r, 'code') === '00000');
+                $user->choice_onboarding_status = $allOk ? 'MEDIA_UPLOADED' : 'MEDIA_PARTIAL';
+                $user->choice_onboarding_updated_at = now();
+                $user->save();
+
+                // store full results in kyc_info as well
                 $kyc = $user->kyc_info ?? [];
                 $kyc['choice'] = [
-                    'status' => 'SUBMITTED',
+                    'status' => $user->choice_onboarding_status,
                     'onboardingRequestId' => $onboardingRequestId,
                     'uploaded' => $uploadResults,
                     'updated_at' => now()->toISOString(),
@@ -325,10 +561,14 @@ class UserController extends ApiController{
                 $user->save();
 
             } catch (\Throwable $e) {
-                \Log::error('Choice onboarding failed', [
+                Log::error('Choice onboarding failed', [
                     'user_id' => $user->id,
                     'error' => $e->getMessage(),
                 ]);
+
+                $user->choice_onboarding_status = 'FAILED';
+                $user->choice_onboarding_updated_at = now();
+                $user->save();
 
                 $kyc = $user->kyc_info ?? [];
                 $kyc['choice'] = [
@@ -343,7 +583,6 @@ class UserController extends ApiController{
 
         return $this->sendResponse(['success' => true], 'KYC data has been submitted for review.');
     }
-
     public function generateQR()
     {
         return $this->sendResponse(['qrcode_image' =>  generateQR(auth()->user()->email)],'QR code has been generated');

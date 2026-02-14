@@ -33,12 +33,20 @@ return [
     'genius' => [
         'ocean' => 'https://geniusocean.com/verify/'
     ],
+//    'choice' => [
+//        'base_url'    => env('CHOICE_BASE_URL'),
+//        'sender'      => env('CHOICE_SENDER'),
+//        'private_key' => env('CHOICE_PRIVATE_KEY'),
+//        'locale'      => env('CHOICE_LOCALE', 'en_KE'),
+//        'timeout'     => (int) env('CHOICE_TIMEOUT', 30),
+//    ],
     'choice' => [
-        'base_url'    => env('CHOICE_BASE_URL'),
-        'sender'      => env('CHOICE_SENDER'),
-        'private_key' => env('CHOICE_PRIVATE_KEY'),
-        'locale'      => env('CHOICE_LOCALE', 'en_KE'),
-        'timeout'     => (int) env('CHOICE_TIMEOUT', 30),
+        'base_url'        => env('CHOICE_BASE_URL'),
+        'sender'          => env('CHOICE_SENDER'),
+        'private_key'     => env('CHOICE_PRIVATE_KEY'),
+        'webhook_secret'  => env('CHOICE_WEBHOOK_SECRET', env('CHOICE_PRIVATE_KEY')),
+        'locale'          => env('CHOICE_LOCALE', 'en_KE'),
+        'timeout'         => (int) env('CHOICE_TIMEOUT', 30),
     ],
 
 ];

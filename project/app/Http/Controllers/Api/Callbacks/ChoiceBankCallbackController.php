@@ -15,7 +15,8 @@ class ChoiceBankCallbackController extends Controller
         // 1) Verify authenticity (recommended)
         // Example: HMAC signature header (adjust to ChoiceBank docs)
         $signature = $request->header('X-ChoiceBank-Signature');
-        $secret = config('services.choicebank.webhook_secret');
+        //$secret = config('services.choicebank.webhook_secret');
+        $secret = config('services.choice.webhook_secret');
 
         if (!$this->isValidSignature($request->getContent(), $signature, $secret)) {
             Log::warning('ChoiceBank callback: invalid signature', [
