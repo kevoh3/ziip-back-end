@@ -261,7 +261,7 @@ class UserController extends ApiController{
                     'address'          => (string) ($user->address ?? ''),
                     'gender'           => $gender, // 0/1
                     'countryCode'      => (string) $phone['countryCode'],
-                    'mobile'           => (string) $phone['mobile'],
+                    'mobile'           => (string) $user->phone,
                     'email'            => (string) ($user->email ?? ''),
                     'idType'           => $idType,
                     'idNumber'         => (string) ($details['id_number'] ?? ''),
@@ -269,7 +269,7 @@ class UserController extends ApiController{
                     'employmentStatus' => (string) ($details['employment_status'] ?? ''),
                     'monthlyIncome'    => (string) ($details['monthly_income'] ?? ''),
                 ];
-                Log::info(json_encode($payload));
+                Log::info('payload  is',['data'=>$payload]);
 
                 $choiceResp = $this->choiceOnboarding->submitOnboarding($payload);
                 Log::info('response is',['response' => $choiceResp]);
