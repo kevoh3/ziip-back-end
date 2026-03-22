@@ -39,7 +39,7 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
 
     Route::post('verify-email',                    [AuthController::class, 'verifyEmailSubmit'])->middleware('auth:sanctum');
 
-    Route::get('resend/verify-email/code',         [AuthController::class, 'verifyEmailResendCode'])->name('verify.email.resend')->middleware('auth:sanctum');
+    Route::get('resend/verify-email/code',         [AuthController::class, 'verifyEmailResendCode'])->name('api.user.verify.email.resend')->middleware('auth:sanctum');
 
     Route::post('two-step/verification',           [AuthController::class, 'twoStepVerify'])->middleware('auth:sanctum');
     Route::post('send/two-step/verify-code/',      [AuthController::class, 'twoStepsendCode'])->middleware('auth:sanctum');
@@ -153,10 +153,10 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
         Route::get('fx-history',        [FxController::class, 'history']);
 
         //support ticket
-        Route::get('support/tickets',                        [SupportTicketController::class, 'index'])->name('user.tickets');
-        Route::get('support/ticket/messages/{ticket_num}',   [SupportTicketController::class, 'messages'])->name('user.ticket.messages');
-        Route::post('open/support/ticket',                   [SupportTicketController::class, 'openTicket'])->name('user.ticket.open');
-        Route::post('reply/ticket/{ticket_num}',             [SupportTicketController::class, 'replyTicket'])->name('user.ticket.reply');
+        Route::get('support/tickets',                        [SupportTicketController::class, 'index'])->name('api.user.tickets');
+        Route::get('support/ticket/messages/{ticket_num}',   [SupportTicketController::class, 'messages'])->name('api.user.ticket.messages');
+        Route::post('open/support/ticket',                   [SupportTicketController::class, 'openTicket'])->name('api.user.ticket.open');
+        Route::post('reply/ticket/{ticket_num}',             [SupportTicketController::class, 'replyTicket'])->name('api.user.ticket.reply');
 
         //invoice
         Route::get('invoices',                  [ManageInvoiceController::class, 'index']);
@@ -199,7 +199,7 @@ Route::prefix('merchant')->middleware('maintenance')->group(function () {
 
     Route::post('verify-email',                    [LoginController::class, 'verifyEmailSubmit'])->middleware('auth:sanctum');
 
-    Route::get('resend/verify-email/code',         [LoginController::class, 'verifyEmailResendCode'])->name('verify.email.resend')->middleware('auth:sanctum');
+    Route::get('resend/verify-email/code',         [LoginController::class, 'verifyEmailResendCode'])->name('api.merchant.verify.email.resend')->middleware('auth:sanctum');
 
     Route::post('two-step/verification',           [LoginController::class, 'twoStepVerify'])->middleware('auth:sanctum');
     Route::get('resend/two-step/verify-code',      [LoginController::class, 'twoStepResendCode'])->middleware('auth:sanctum');
@@ -232,10 +232,10 @@ Route::prefix('merchant')->middleware('maintenance')->group(function () {
         Route::get('service-mode',                [MerchantController::class, 'serviceMode']);
 
         //support ticket
-        Route::get('support/tickets',                        [SupportTicketController::class, 'index'])->name('merchant.tickets');
-        Route::get('support/ticket/messages/{ticket_num}',   [SupportTicketController::class, 'messages'])->name('merchant.ticket.messages');
-        Route::post('open/support/ticket',                   [SupportTicketController::class, 'openTicket'])->name('merchant.ticket.open');
-        Route::post('reply/ticket/{ticket_num}',             [SupportTicketController::class, 'replyTicket'])->name('merchant.ticket.reply');
+        Route::get('support/tickets',                        [SupportTicketController::class, 'index'])->name('api.merchant.tickets');
+        Route::get('support/ticket/messages/{ticket_num}',   [SupportTicketController::class, 'messages'])->name('api.merchant.ticket.messages');
+        Route::post('open/support/ticket',                   [SupportTicketController::class, 'openTicket'])->name('api.merchant.ticket.open');
+        Route::post('reply/ticket/{ticket_num}',             [SupportTicketController::class, 'replyTicket'])->name('api.merchant.ticket.reply');
     });
 
 });
