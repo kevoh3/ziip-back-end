@@ -282,7 +282,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::post('balance-modify', [ManageUserController::class, 'modifyBalance'])->name('user.balance.modify')->middleware('permission:user balance modify');
 
-        Route::get('user-login/{id}', [ManageUserController::class, 'login'])->name('user.login')->middleware('permission:user login');
+        Route::get('user-login/{id}', [ManageUserController::class, 'login'])->name('admin.user.login')->middleware('permission:user login');
 
         Route::get('user-login/info/{id}', [ManageUserController::class, 'loginInfo'])->name('user.login.info')->middleware('permission:user login logs');
 
