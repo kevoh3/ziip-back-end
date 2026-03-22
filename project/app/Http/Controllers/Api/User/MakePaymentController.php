@@ -7,6 +7,7 @@ use App\Models\Currency;
 use App\Models\Merchant;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\ApiController;
 
@@ -49,68 +50,70 @@ class MakePaymentController extends ApiController
         $currency = Currency::findOrFail($senderWallet->currency->id);
         $charge = charge('merchant-payment');
        
-        $merchantWallet = Wallet::where('currency_id',$currency->id)->where('user_id',$receiver->id)->where('user_type',2)->where('user_id',$receiver->id)->first();
+        return DB::transaction(function () use ($request, $receiver, $senderWallet, $currency, $charge) {
+            // Re-fetch with locks to prevent race conditions
+            $senderWallet = Wallet::where('id', $senderWallet->id)->lockForUpdate()->first();
 
-        if(!$merchantWallet){
-            $merchantWallet = Wallet::create([
-                'user_id'     => $receiver->id,
-                'user_type'   => 2,
-                'currency_id' => $currency->id,
-                'balance'     => 0
-            ]);
-        }
+            $merchantWallet = Wallet::where('currency_id',$currency->id)->where('user_id',$receiver->id)->where('user_type',2)->lockForUpdate()->first();
 
-        $finalCharge = chargeCalc($charge,$request->amount,$currency->rate);
-        if($finalCharge > $request->amount) $finalCharge = 0;
-        $finalAmount =  numFormat($request->amount - $finalCharge);
+            if(!$merchantWallet){
+                $merchantWallet = Wallet::create([
+                    'user_id'     => $receiver->id,
+                    'user_type'   => 2,
+                    'currency_id' => $currency->id,
+                    'balance'     => 0
+                ]);
+            }
 
-        if($finalAmount < 0)return $this->sendError('Error',['Amount can not be less than 0.']);
-        if($senderWallet->balance < $finalAmount) return $this->sendError('Error',['Insufficient balance.']);
-    
-        $senderWallet->balance -= $request->amount;
-        $senderWallet->update();
+            $finalCharge = chargeCalc($charge,$request->amount,$currency->rate);
+            if($finalCharge > $request->amount) $finalCharge = 0;
+            $finalAmount =  numFormat($request->amount - $finalCharge);
 
-        $trnx              = new Transaction();
-        $trnx->trnx        = str_rand();
-        $trnx->user_id     = auth()->id();
-        $trnx->user_type   = 1;
-        $trnx->currency_id = $currency->id;
-        $trnx->wallet_id   = $senderWallet->id;
-        $trnx->amount      = $request->amount;
-        $trnx->charge      = 0;
-        $trnx->type        = '-';
-        $trnx->remark      = 'merchant_payment';
-        $trnx->details     = trans('Payment to merchant : '). $receiver->email;
-        $trnx->save();
+            if($finalAmount < 0) return $this->sendError('Error',['Amount can not be less than 0.']);
+            if($senderWallet->balance < $request->amount) return $this->sendError('Error',['Insufficient balance.']);
 
-        $merchantWallet->balance += $finalAmount;
-        $merchantWallet->update();
+            $senderWallet->balance -= $request->amount;
+            $senderWallet->update();
 
-        $receiverTrnx              = new Transaction();
-        $receiverTrnx->trnx        = $trnx->trnx;
-        $receiverTrnx->user_id     = $receiver->id;
-        $receiverTrnx->user_type   = 2;
-        $receiverTrnx->currency_id = $currency->id;
-        $receiverTrnx->wallet_id   = $merchantWallet->id;
-        $receiverTrnx->amount      = $finalAmount;
-        $receiverTrnx->charge      = $finalCharge;
-        $receiverTrnx->type        = '+';
-        $receiverTrnx->remark      = 'merchant_payment';
-        $receiverTrnx->details     = trans('Payment received from : '). auth()->user()->email;
-        $receiverTrnx->save();
+            $trnx              = new Transaction();
+            $trnx->trnx        = str_rand();
+            $trnx->user_id     = auth()->id();
+            $trnx->user_type   = 1;
+            $trnx->currency_id = $currency->id;
+            $trnx->wallet_id   = $senderWallet->id;
+            $trnx->amount      = $request->amount;
+            $trnx->charge      = $finalCharge;
+            $trnx->type        = '-';
+            $trnx->remark      = 'merchant_payment';
+            $trnx->details     = trans('Payment to merchant : '). $receiver->email;
+            $trnx->save();
 
-        try {
-            //mail to user
-            @mailSend('make_payment',["curr"=>$currency->code,'amount'=>amount($request->amount,$currency->type,3),"trnx"=>$trnx->trnx,"to_merchant"=>$receiver->email,'date_time'=> dateFormat( $receiverTrnx->created_at),"after_balance"=>amount($senderWallet->balance,$currency->type,3)],auth()->user());
+            $merchantWallet->balance += $finalAmount;
+            $merchantWallet->update();
 
-            //mail to merchant
-            @mailSend('make_payment',["curr"=>$currency->code,'amount'=>amount($request->amount,$currency->type,3),"trnx"=>$trnx->trnx,"from_user"=>auth()->user()->email,'date_time'=> dateFormat( $receiverTrnx->created_at),"after_balance"=>amount($merchantWallet->balance,$currency->type,3),"charge"=>$finalCharge],auth()->user());
-            
-        } catch (\Throwable $th) {
-            
-        }
-        
-        return $this->sendResponse(['success'],__('Payment successfull'));
+            $receiverTrnx              = new Transaction();
+            $receiverTrnx->trnx        = $trnx->trnx;
+            $receiverTrnx->user_id     = $receiver->id;
+            $receiverTrnx->user_type   = 2;
+            $receiverTrnx->currency_id = $currency->id;
+            $receiverTrnx->wallet_id   = $merchantWallet->id;
+            $receiverTrnx->amount      = $finalAmount;
+            $receiverTrnx->charge      = $finalCharge;
+            $receiverTrnx->type        = '+';
+            $receiverTrnx->remark      = 'merchant_payment';
+            $receiverTrnx->details     = trans('Payment received from : '). auth()->user()->email;
+            $receiverTrnx->save();
+
+            try {
+                //mail to user
+                @mailSend('make_payment',["curr"=>$currency->code,'amount'=>amount($request->amount,$currency->type,3),"trnx"=>$trnx->trnx,"to_merchant"=>$receiver->email,'date_time'=> dateFormat( $receiverTrnx->created_at),"after_balance"=>amount($senderWallet->balance,$currency->type,3)],auth()->user());
+
+                //mail to merchant
+                @mailSend('make_payment',["curr"=>$currency->code,'amount'=>amount($request->amount,$currency->type,3),"trnx"=>$trnx->trnx,"from_user"=>auth()->user()->email,'date_time'=> dateFormat( $receiverTrnx->created_at),"after_balance"=>amount($merchantWallet->balance,$currency->type,3),"charge"=>$finalCharge],auth()->user());
+            } catch (\Throwable $th) {}
+
+            return $this->sendResponse(['success'],__('Payment successfull'));
+        });
     }
 
     public function paymentHistory()

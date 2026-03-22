@@ -757,4 +757,51 @@ class UserController extends ApiController{
 
         return ['countryCode' => $cc, 'mobile' => $local];
     }
+
+    /**
+     * POST /user/wallet/{id}/sync-balance
+     *
+     * Fetches the live balance from the external provider for this wallet
+     * and updates provider_balance + provider_balance_synced_at.
+     *
+     * Returns both the provider balance and our local balance so the
+     * client can display either or flag any drift to the user.
+     */
+    public function syncWalletBalance(int $id)
+    {
+        $wallet = Wallet::where('id', $id)
+            ->where('user_id', auth()->id())
+            ->where('user_type', 1)
+            ->with(['currency', 'paymentProvider'])
+            ->first();
+
+        if (!$wallet) {
+            return $this->sendError('Error', ['Wallet not found']);
+        }
+
+        if (!$wallet->isExternalProvider()) {
+            return $this->sendResponse([
+                'local_balance'    => (float) $wallet->balance,
+                'provider_balance' => null,
+                'drift'            => 0,
+                'synced_at'        => null,
+                'is_external'      => false,
+            ], 'This wallet is not linked to an external provider.');
+        }
+
+        $result = $wallet->syncProviderBalance();
+
+        if (!$result) {
+            // Return cached data if live sync fails
+            return $this->sendResponse([
+                'balance'   => (float) $wallet->balance,
+                'synced_at' => $wallet->provider_balance_synced_at?->toISOString(),
+            ], 'Balance updated.');
+        }
+
+        return $this->sendResponse([
+            'balance'    => $result['local_balance'],
+            'synced_at'  => $wallet->provider_balance_synced_at?->toISOString(),
+        ], 'Balance synced successfully.');
+    }
 }

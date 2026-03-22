@@ -15,22 +15,30 @@ class Wallet extends Model
         'user_type',
         'currency_id',
         'balance',
+        'provider_balance',
+        'provider_balance_synced_at',
         'wallet_name',
         'description',
         'wallet_internal_account_number',
         'wallet_external_provider',
         'wallet_external_provider_number',
         'provider_wallet_type',
+        'provider_account_name',
+        'provider_shortcode',
+        'provider_account_status',
         'provider_reference_id',
         'provider_metadata',
+        'payment_provider_id',
         'wallet_status',
-        'is_primary'
+        'is_primary',
     ];
 
     protected $casts = [
-        'provider_metadata' => 'array',
-        'balance' => 'decimal:10',
-        'is_primary' => 'boolean'
+        'provider_metadata'          => 'array',
+        'balance'                    => 'decimal:10',
+        'provider_balance'           => 'decimal:10',
+        'provider_balance_synced_at' => 'datetime',
+        'is_primary'                 => 'boolean',
     ];
 
     protected $with = ['currency'];
@@ -112,6 +120,15 @@ class Wallet extends Model
     public function currency()
     {
         return $this->belongsTo(Currency::class);
+    }
+
+    /**
+     * The licensed provider backing this wallet (ChoiceBank, JamboPay, etc.)
+     * NULL means it is a purely internal wallet — no external provider yet.
+     */
+    public function paymentProvider()
+    {
+        return $this->belongsTo(PaymentProvider::class, 'payment_provider_id');
     }
 
     protected static function boot()
@@ -411,11 +428,152 @@ class Wallet extends Model
     }
 
     /**
-     * Check if wallet is external provider wallet
+     * Check if wallet is backed by an external licensed provider.
      */
-    public function isExternalProvider()
+    public function isExternalProvider(): bool
     {
         return !empty($this->wallet_external_provider) && !empty($this->wallet_external_provider_number);
+    }
+
+    /**
+     * Check if the provider is active and the wallet is fully linked.
+     */
+    public function isProviderActive(): bool
+    {
+        return $this->isExternalProvider()
+            && strtoupper($this->provider_account_status ?? 'ACTIVE') === 'ACTIVE'
+            && $this->wallet_status === 'active';
+    }
+
+    /**
+     * How many minutes old is the provider balance cache.
+     * Returns null if never synced.
+     */
+    public function providerBalanceAgeMinutes(): ?int
+    {
+        if (!$this->provider_balance_synced_at) return null;
+        return (int) $this->provider_balance_synced_at->diffInMinutes(now());
+    }
+
+    /**
+     * True if the provider balance has not been synced in the last $minutes minutes.
+     */
+    public function isProviderBalanceStale(int $minutes = 30): bool
+    {
+        if (!$this->isExternalProvider()) return false;
+        if (!$this->provider_balance_synced_at) return true;
+        return $this->providerBalanceAgeMinutes() >= $minutes;
+    }
+
+    /**
+     * Pull the live balance from the provider and update provider_balance.
+     *
+     * Does NOT update our local `balance` column — that is our accounting truth.
+     * Use the returned difference to detect and alert on drift.
+     *
+     * Returns ['provider_balance' => float, 'local_balance' => float, 'drift' => float]
+     * Returns null if wallet has no provider or provider call fails.
+     */
+    public function syncProviderBalance(): ?array
+    {
+        if (!$this->isExternalProvider() || !$this->payment_provider_id) {
+            return null;
+        }
+
+        try {
+            $provider = $this->paymentProvider;
+            if (!$provider || !$provider->is_active) return null;
+
+            $driver   = app($provider->driver_class, ['provider' => $provider]);
+            $response = $driver->getBalance($this->wallet_external_provider_number);
+
+            if (!$response->success) return null;
+
+            // ChoiceBank returns balance in data.availableBalance or data.balance
+            $providerBalance = (float) (
+                $response->data['availableBalance']
+                ?? $response->data['balance']
+                ?? $response->data['currentBalance']
+                ?? 0
+            );
+
+            $this->provider_balance           = $providerBalance;
+            $this->provider_balance_synced_at = now();
+
+            // Also update provider_account_status from response if present
+            if (!empty($response->data['accountStatus'])) {
+                $this->provider_account_status = strtoupper($response->data['accountStatus']);
+            }
+
+            $this->save();
+
+            return [
+                'provider_balance' => $providerBalance,
+                'local_balance'    => (float) $this->balance,
+                'drift'            => round($providerBalance - (float) $this->balance, 10),
+            ];
+
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Wallet::syncProviderBalance failed', [
+                'wallet_id' => $this->id,
+                'error'     => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Link this wallet to a provider account after onboarding is approved.
+     *
+     * Called by HandleOnboardingCompleted (and any future onboarding listeners).
+     *
+     * @param string $providerSlug    e.g. 'choicebank'
+     * @param string $accountId       the account ID at the provider
+     * @param array  $providerData    full response data from the provider
+     */
+    public function linkToProvider(string $providerSlug, string $accountId, array $providerData = []): void
+    {
+        $provider = PaymentProvider::where('slug', $providerSlug)->first();
+
+        $this->wallet_external_provider        = $provider?->name ?? $providerSlug;
+        $this->wallet_external_provider_number = $accountId;
+        $this->payment_provider_id             = $provider?->id;
+        $this->provider_wallet_type            = $providerData['accountType'] ?? $this->provider_wallet_type;
+        $this->provider_account_name           = $providerData['accountName'] ?? null;
+        $this->provider_shortcode              = $providerData['shortCode'] ?? null;
+        $this->provider_account_status         = strtoupper($providerData['accountStatus'] ?? 'ACTIVE');
+        $this->provider_reference_id           = $providerData['onboardingRequestId'] ?? null;
+        $this->provider_metadata               = array_merge($this->provider_metadata ?? [], $providerData);
+        $this->wallet_status                   = 'active';
+
+        $this->save();
+    }
+
+    /**
+     * Detach from the current provider (e.g. when switching to a new provider).
+     * Preserves metadata for audit purposes.
+     */
+    public function unlinkProvider(): void
+    {
+        // Archive to metadata before clearing
+        $archived = $this->provider_metadata ?? [];
+        $archived['_previous_provider'] = [
+            'provider'       => $this->wallet_external_provider,
+            'account_number' => $this->wallet_external_provider_number,
+            'unlinked_at'    => now()->toISOString(),
+        ];
+
+        $this->wallet_external_provider        = null;
+        $this->wallet_external_provider_number = null;
+        $this->payment_provider_id             = null;
+        $this->provider_account_name           = null;
+        $this->provider_shortcode              = null;
+        $this->provider_account_status         = null;
+        $this->provider_balance                = null;
+        $this->provider_balance_synced_at      = null;
+        $this->provider_metadata               = $archived;
+
+        $this->save();
     }
 
     /**

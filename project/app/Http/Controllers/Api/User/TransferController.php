@@ -7,6 +7,7 @@ use App\Models\Wallet;
 use App\Models\Currency;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\ApiController;
 
@@ -76,66 +77,68 @@ class TransferController extends ApiController
             return $this->sendError('Error',['Please follow the limit']);
         }
 
-        $recieverWallet = Wallet::where('currency_id',$currency->id)->where('user_type',1)->where('user_id',$receiver->id)->first();
+        return DB::transaction(function () use ($request, $receiver, $senderWallet, $currency, $charge) {
+            // Re-fetch with lock to prevent race conditions
+            $senderWallet = Wallet::where('id', $senderWallet->id)->lockForUpdate()->first();
 
-        if(!$recieverWallet){
-            $recieverWallet = Wallet::create([
-                'user_id'     => $receiver->id,
-                'user_type'   => 1,
-                'currency_id' => $currency->id,
-                'balance'     => 0
-            ]);
-        }
+            $recieverWallet = Wallet::where('currency_id',$currency->id)->where('user_type',1)->where('user_id',$receiver->id)->lockForUpdate()->first();
 
-        $finalCharge = amount(chargeCalc($charge,$request->amount,$currency->rate),$currency->type);
-        $finalAmount =  amount($request->amount + $finalCharge, $currency->type);
- 
-        if($senderWallet->balance < $finalAmount) return $this->sendError('Error',['Insufficient balance.']);
-        
-        $senderWallet->balance -= $finalAmount;
-        $senderWallet->update();
+            if(!$recieverWallet){
+                $recieverWallet = Wallet::create([
+                    'user_id'     => $receiver->id,
+                    'user_type'   => 1,
+                    'currency_id' => $currency->id,
+                    'balance'     => 0
+                ]);
+            }
 
-        $trnx              = new Transaction();
-        $trnx->trnx        = str_rand();
-        $trnx->user_id     = auth()->id();
-        $trnx->user_type   = 1;
-        $trnx->currency_id = $currency->id;
-        $trnx->wallet_id   = $senderWallet->id;
-        $trnx->amount      = $request->amount;
-        $trnx->charge      = $finalCharge;
-        $trnx->remark      = 'transfer_money';
-        $trnx->type        = '-';
-        $trnx->details     = trans('Transfer money to '). $receiver->email;
-        $trnx->save();
+            $finalCharge = amount(chargeCalc($charge,$request->amount,$currency->rate),$currency->type);
+            $finalAmount =  amount($request->amount + $finalCharge, $currency->type);
 
-        $recieverWallet->balance += $request->amount;
-        $recieverWallet->update();
+            if($senderWallet->balance < $finalAmount) return $this->sendError('Error',['Insufficient balance.']);
 
-        $receiverTrnx              = new Transaction();
-        $receiverTrnx->trnx        = $trnx->trnx;
-        $receiverTrnx->user_id     = $receiver->id;
-        $receiverTrnx->user_type   = 1;
-        $receiverTrnx->currency_id = $currency->id;
-        $receiverTrnx->wallet_id   = $recieverWallet->id;
-        $receiverTrnx->amount      = $request->amount;
-        $receiverTrnx->charge      = 0;
-        $receiverTrnx->remark      = 'transfer_money';
-        $receiverTrnx->type        = '+';
-        $receiverTrnx->details     = trans('Received money from '). auth()->user()->email;
-        $receiverTrnx->save();
+            $senderWallet->balance -= $finalAmount;
+            $senderWallet->update();
 
-       try {
-            //to sender
-        @mailSend('transfer_money',['trnx'=>$trnx->trnx,'amount'=>amount($request->amount,$currency->type,3),'curr'=>$currency->code,'charge'=> numFormat($finalCharge),'after_balance'=> amount($senderWallet->balance,$currency->type,3),'trans_to'=> $receiver->email,'date_time'=> dateFormat($trnx->created_at)],auth()->user());
+            $trnx              = new Transaction();
+            $trnx->trnx        = str_rand();
+            $trnx->user_id     = auth()->id();
+            $trnx->user_type   = 1;
+            $trnx->currency_id = $currency->id;
+            $trnx->wallet_id   = $senderWallet->id;
+            $trnx->amount      = $request->amount;
+            $trnx->charge      = $finalCharge;
+            $trnx->remark      = 'transfer_money';
+            $trnx->type        = '-';
+            $trnx->details     = trans('Transfer money to '). $receiver->email;
+            $trnx->save();
 
-        //to receiver
-        @mailSend('received_money',['trnx'=>$trnx->trnx,'amount'=> amount($request->amount,$currency->type,3),'curr'=>$currency->code,'charge'=> 0,'after_balance'=> amount($recieverWallet->balance,$currency->type,3),'trans_from'=> auth()->user()->email,'date_time'=> dateFormat($trnx->created_at)],$receiver);
+            $recieverWallet->balance += $request->amount;
+            $recieverWallet->update();
 
-       } catch (\Throwable $th) {
-           
-       }
-        
-        return $this->sendResponse('success','Money has been transferred successfully');
+            $receiverTrnx              = new Transaction();
+            $receiverTrnx->trnx        = $trnx->trnx;
+            $receiverTrnx->user_id     = $receiver->id;
+            $receiverTrnx->user_type   = 1;
+            $receiverTrnx->currency_id = $currency->id;
+            $receiverTrnx->wallet_id   = $recieverWallet->id;
+            $receiverTrnx->amount      = $request->amount;
+            $receiverTrnx->charge      = 0;
+            $receiverTrnx->remark      = 'transfer_money';
+            $receiverTrnx->type        = '+';
+            $receiverTrnx->details     = trans('Received money from '). auth()->user()->email;
+            $receiverTrnx->save();
+
+            try {
+                //to sender
+                @mailSend('transfer_money',['trnx'=>$trnx->trnx,'amount'=>amount($request->amount,$currency->type,3),'curr'=>$currency->code,'charge'=> numFormat($finalCharge),'after_balance'=> amount($senderWallet->balance,$currency->type,3),'trans_to'=> $receiver->email,'date_time'=> dateFormat($trnx->created_at)],auth()->user());
+
+                //to receiver
+                @mailSend('received_money',['trnx'=>$trnx->trnx,'amount'=> amount($request->amount,$currency->type,3),'curr'=>$currency->code,'charge'=> 0,'after_balance'=> amount($recieverWallet->balance,$currency->type,3),'trans_from'=> auth()->user()->email,'date_time'=> dateFormat($trnx->created_at)],$receiver);
+            } catch (\Throwable $th) {}
+
+            return $this->sendResponse('success','Money has been transferred successfully');
+        });
 
     }
 
