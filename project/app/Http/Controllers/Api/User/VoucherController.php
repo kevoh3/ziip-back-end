@@ -7,6 +7,7 @@ use App\Models\Voucher;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\ApiController;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class VoucherController extends ApiController
@@ -47,51 +48,54 @@ class VoucherController extends ApiController
             return $this->sendError('Error',['Please follow the limit']);
         }
 
-        $finalCharge = chargeCalc($charge,$request->amount,$rate);
-        $finalAmount = numFormat($request->amount + $finalCharge);
+        return DB::transaction(function () use ($request, $wallet, $charge, $rate) {
+            $wallet = Wallet::where('id', $wallet->id)->lockForUpdate()->first();
 
-        $commission  = ($request->amount * $charge->commission)/100;
-      
-        $voucher = new Voucher();
-        $voucher->user_id = auth()->id();
-        $voucher->currency_id = $wallet->currency_id;
-        $voucher->amount = $request->amount;
-        $voucher->code = randNum(10).'-'.randNum(10);
-        $voucher->save();
-        
-        if($finalAmount > $wallet->balance) return $this->sendError('Error',['Wallet has insufficient balance']);
-        
-        $wallet->balance -=  $finalAmount;
-        $wallet->save();
+            $finalCharge = chargeCalc($charge,$request->amount,$rate);
+            $finalAmount = numFormat($request->amount + $finalCharge);
+            $commission  = ($request->amount * $charge->commission)/100;
 
-        $trnx              = new Transaction();
-        $trnx->trnx        = str_rand();
-        $trnx->user_id     = auth()->id();
-        $trnx->user_type   = 1;
-        $trnx->currency_id = $wallet->currency->id;
-        $trnx->amount      = $finalAmount;
-        $trnx->charge      = $finalCharge;
-        $trnx->remark      = 'create_voucher';
-        $trnx->type        = '-';
-        $trnx->details     = trans('Voucher created');
-        $trnx->save();
+            if($finalAmount > $wallet->balance) return $this->sendError('Error',['Wallet has insufficient balance']);
 
-        $wallet->balance +=  $commission;
-        $wallet->save();
+            $wallet->balance -= $finalAmount;
+            $wallet->save();
 
-        $commissionTrnx              = new Transaction();
-        $commissionTrnx->trnx        = $trnx->trnx;
-        $commissionTrnx->user_id     = auth()->id();
-        $commissionTrnx->user_type   = 1;
-        $commissionTrnx->currency_id = $wallet->currency->id;
-        $commissionTrnx->amount      = $commission;
-        $commissionTrnx->charge      = 0;
-        $commissionTrnx->remark      = 'voucher_commission';
-        $commissionTrnx->type        = '+';
-        $commissionTrnx->details     = trans('Voucher commission');
-        $commissionTrnx->save();
+            $voucher = new Voucher();
+            $voucher->user_id = auth()->id();
+            $voucher->currency_id = $wallet->currency_id;
+            $voucher->amount = $request->amount;
+            $voucher->code = randNum(10).'-'.randNum(10);
+            $voucher->save();
 
-        return $this->sendResponse(['success'],__('Voucher has been created successfully'));
+            $trnx              = new Transaction();
+            $trnx->trnx        = str_rand();
+            $trnx->user_id     = auth()->id();
+            $trnx->user_type   = 1;
+            $trnx->currency_id = $wallet->currency->id;
+            $trnx->amount      = $finalAmount;
+            $trnx->charge      = $finalCharge;
+            $trnx->remark      = 'create_voucher';
+            $trnx->type        = '-';
+            $trnx->details     = trans('Voucher created');
+            $trnx->save();
+
+            $wallet->balance += $commission;
+            $wallet->save();
+
+            $commissionTrnx              = new Transaction();
+            $commissionTrnx->trnx        = $trnx->trnx;
+            $commissionTrnx->user_id     = auth()->id();
+            $commissionTrnx->user_type   = 1;
+            $commissionTrnx->currency_id = $wallet->currency->id;
+            $commissionTrnx->amount      = $commission;
+            $commissionTrnx->charge      = 0;
+            $commissionTrnx->remark      = 'voucher_commission';
+            $commissionTrnx->type        = '+';
+            $commissionTrnx->details     = trans('Voucher commission');
+            $commissionTrnx->save();
+
+            return $this->sendResponse(['success'],__('Voucher has been created successfully'));
+        });
 
     }
 
@@ -110,45 +114,47 @@ class VoucherController extends ApiController
         if($validator->fails()){
             return $this->sendError('Validation Error', $validator->errors());       
         }
-       $voucher = Voucher::where('code',$request->code)->where('status',0)->first();
-      
-       if(!$voucher){
-           return $this->sendError('Error',['Invalid voucher code']);
-       }
+       return DB::transaction(function () use ($request) {
+           $voucher = Voucher::where('code',$request->code)->where('status',0)->lockForUpdate()->first();
 
-       if( $voucher->user_id == auth()->id()){
-          return $this->sendError('Error',['Can\'t reedem your own voucher']);
-       }
-       
-       $wallet = Wallet::where('currency_id',$voucher->currency_id)->where('user_id',auth()->id())->first();
-       if(!$wallet){
-          $wallet = Wallet::create([
-              'user_id' => auth()->id(),
-              'user_type' => 1,
-              'currency_id' => $voucher->currency_id,
-              'balance'   => 0
-          ]);
-       }
+           if(!$voucher){
+               return $this->sendError('Error',['Invalid voucher code']);
+           }
 
-       $wallet->balance += $voucher->amount;
-       $wallet->update();
+           if($voucher->user_id == auth()->id()){
+               return $this->sendError('Error',['Can\'t reedem your own voucher']);
+           }
 
-       $trnx              = new Transaction();
-       $trnx->trnx        = str_rand();
-       $trnx->user_id     = auth()->id();
-       $trnx->user_type   = 1;
-       $trnx->currency_id = $wallet->currency->id;
-       $trnx->amount      = $voucher->amount;
-       $trnx->charge      = 0;
-       $trnx->remark      = 'reedem_voucher';
-       $trnx->details     = trans('Voucher reedemed');
-       $trnx->save();
+           $wallet = Wallet::where('currency_id',$voucher->currency_id)->where('user_id',auth()->id())->lockForUpdate()->first();
+           if(!$wallet){
+               $wallet = Wallet::create([
+                   'user_id' => auth()->id(),
+                   'user_type' => 1,
+                   'currency_id' => $voucher->currency_id,
+                   'balance'   => 0
+               ]);
+           }
 
-       $voucher->status = 1;
-       $voucher->reedemed_by = auth()->id();
-       $voucher->update();
+           $wallet->balance += $voucher->amount;
+           $wallet->update();
 
-       return $this->sendResponse(['success'],__('Voucher reedemed successfully'));
+           $trnx              = new Transaction();
+           $trnx->trnx        = str_rand();
+           $trnx->user_id     = auth()->id();
+           $trnx->user_type   = 1;
+           $trnx->currency_id = $wallet->currency->id;
+           $trnx->amount      = $voucher->amount;
+           $trnx->charge      = 0;
+           $trnx->remark      = 'reedem_voucher';
+           $trnx->details     = trans('Voucher reedemed');
+           $trnx->save();
+
+           $voucher->status = 1;
+           $voucher->reedemed_by = auth()->id();
+           $voucher->update();
+
+           return $this->sendResponse(['success'],__('Voucher reedemed successfully'));
+       });
 
     }
 

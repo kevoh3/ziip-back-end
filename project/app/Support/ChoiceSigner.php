@@ -52,6 +52,38 @@ class ChoiceSigner
         return $out;
     }
 
+    /**
+     * Verify a signature on an incoming payload (callback or response).
+     * The payload must contain 'signature' and 'salt'.
+     */
+    public static function verify(array $payload, string $privateKey): bool
+    {
+        if (!isset($payload['signature'])) {
+            return false;
+        }
+
+        $expected = $payload['signature'];
+
+        // Remove signature, add senderKey for re-hashing
+        $check = $payload;
+        unset($check['signature']);
+        $check['senderKey'] = $privateKey;
+
+        $flat = self::flatten($check);
+        ksort($flat, SORT_STRING);
+
+        $pairs = [];
+        foreach ($flat as $k => $v) {
+            if (is_bool($v)) $v = $v ? 'true' : 'false';
+            if ($v === null) $v = '';
+            $pairs[] = $k . '=' . (string) $v;
+        }
+
+        $computed = hash('sha256', implode('&', $pairs));
+
+        return hash_equals($computed, $expected);
+    }
+
     private static function randomSalt(int $length): string
     {
         $bytes = (int) ceil($length / 2);

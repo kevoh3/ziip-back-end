@@ -45,7 +45,6 @@ class DepositController extends ApiController
             'amount' => 'required|numeric',
             'wallet_id' => 'required|numeric',
             'method_id' => 'required|numeric',
-            'user_id' => 'required|numeric',
         ]);
 
         if ($validator->fails()) {
@@ -73,7 +72,7 @@ class DepositController extends ApiController
         $payment->amount = $request->amount;
         $payment->wallet_id = $request->wallet_id;
         $payment->method_id = $request->method_id;
-        $payment->user_id = $request->user_id;
+        $payment->user_id = auth()->id();
         $payment->currency_id = $wallet->currency_id;
         $payment->save();
 

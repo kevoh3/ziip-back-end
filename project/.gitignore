@@ -11,6 +11,7 @@
 .env
 .env.backup
 .env.production
+.env.staging
 .phpunit.result.cache
 Homestead.json
 Homestead.yaml
@@ -20,5 +21,20 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Local dev symlink (not needed on server — server has real public/)
+/public
+
+# Laravel cache & compiled files
+/bootstrap/cache/*.php
+/storage/logs/*.log
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+
+# OS files
+.DS_Store
+Thumbs.db
+
 # Ignore images folder outside project
 ../assets/images/

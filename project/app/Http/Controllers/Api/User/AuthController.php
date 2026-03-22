@@ -177,20 +177,6 @@ class AuthController extends ApiController
         } else {
             return $this->sendError('Authentication Error', ['Invalid credentials provided.'], 401);
         }
-
-        if(Auth::attempt(['email' => $request->email, 'password' => $request->password])){
-            $user = Auth::user();
-            $success['token'] =  $user->createToken('wallet')->plainTextToken;
-            $success['user']  =  new UserResource($user);
-
-            $code = randNum();
-            $user->two_fa_code = $code;
-            $user->update();
-            return $this->sendResponse($success, 'Login successful.');
-        }
-        else{
-            return $this->sendError('Error.', ['Unauthorised access']);
-        }
     }
 
     public function logout(Request $request)
@@ -232,7 +218,6 @@ class AuthController extends ApiController
         ]);
 
         $success['email'] = $exist->email;
-        $success['verify_code'] = $exist->verify_code;
         return $this->sendResponse($success,'Reset code has been sent to email.');
     }
 
@@ -272,10 +257,14 @@ class AuthController extends ApiController
             return $this->sendError('Validation Error', $validator->errors());
         }
         $user = User::where('email',$request->email)->first();
-        if(!$user || !$request->code){
+        if(!$user){
             return $this->sendError('Error', ['Invalid request']);
         }
+        if($user->verify_code != $request->code){
+            return $this->sendError('Error', ['Invalid or expired reset code']);
+        }
         $user->password = bcrypt($request->password);
+        $user->verify_code = null;
         $user->update();
         return $this->sendResponse(['success'],'Password reset successful.');
     }
@@ -331,7 +320,7 @@ class AuthController extends ApiController
         $user->two_fa_code = $code;
         $user->update();
         sendSMS($user->phone,'Your two step authentication OTP is : '.$code,Generalsetting::value('contact_no'));
-        return $this->sendResponse(['success'=>true,'code'=>$code],'OTP code is sent to your phone.');
+        return $this->sendResponse(['success'=>true],'OTP code is sent to your phone.');
     }
 
 
@@ -348,7 +337,7 @@ class AuthController extends ApiController
         $user->two_fa_code = $code;
         $user->update();
         sendSMS($user->phone,'Your two step authentication OTP is : '.$code,Generalsetting::value('contact_no'));
-        return $this->sendResponse(['success'=>true,'code'=>$code],'OTP code is sent to your phone.');
+        return $this->sendResponse(['success'=>true],'OTP code is sent to your phone.');
     }
 
 

@@ -18,6 +18,10 @@ use App\Http\Controllers\Api\User\ExchangeMoneyController;
 use App\Http\Controllers\Api\User\ManageInvoiceController;
 use App\Http\Controllers\Api\Merchant\WithdrawalController;
 use App\Http\Controllers\Api\User\WithdrawalController as UserWithdrawalController;
+use App\Http\Controllers\Api\User\ExternalSendController;
+use App\Http\Controllers\Api\User\AirtimeController;
+use App\Http\Controllers\Api\User\BillPaymentController;
+use App\Http\Controllers\Api\User\FxController;
 
 
 Route::get('qr-code-scan/{email}',   [FrontendController::class, 'scanQR']);
@@ -44,9 +48,10 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
     Route::middleware(['auth:sanctum', 'email_verify', 'twostep_api'])->group(function () {
         Route::get('settings',                [AuthController::class, 'settings']);
         Route::post('logout',                  [AuthController::class, 'logout']);
-        Route::get('/dashboard',               [UserController::class, 'index']);
-        Route::get('/generate-qrcode',         [UserController::class, 'generateQR']);
-        Route::get('/user-info',               [UserController::class, 'userInfo']);
+        Route::get('/dashboard',                      [UserController::class, 'index']);
+        Route::get('/generate-qrcode',               [UserController::class, 'generateQR']);
+        Route::get('/user-info',                     [UserController::class, 'userInfo']);
+        Route::post('/wallet/{id}/sync-balance',     [UserController::class, 'syncWalletBalance']);
         Route::get('kyc-form-data',            [UserController::class, 'kycForm']);
         Route::post('kyc-form',                [UserController::class, 'kycFormSubmit']);
         Route::get('transactions',             [UserController::class, 'transactions']);
@@ -73,11 +78,33 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
             Route::post('create-voucher',   [VoucherController::class, 'submit']);
 
             //withdraw
-            Route::get('withdraw-money',    [UserWithdrawalController::class, 'withdrawForm']);
-            Route::post('withdraw-money',   [UserWithdrawalController::class, 'withdrawSubmit']);
-            Route::get('cash-out',          [UserWithdrawalController::class,'cashOutForm']);
-            Route::post('cash-out',         [UserWithdrawalController::class,'cashOut']);
-            Route::post('check-ajent',      [UserWithdrawalController::class, 'checkReceiver']);
+            Route::get('withdraw-money',            [UserWithdrawalController::class, 'withdrawForm']);
+            Route::post('withdraw-money',           [UserWithdrawalController::class, 'withdrawSubmit']);
+            Route::post('withdraw-money/confirm-otp', [UserWithdrawalController::class, 'confirmOtp']);
+            Route::get('cash-out',                  [UserWithdrawalController::class, 'cashOutForm']);
+            Route::post('cash-out',                 [UserWithdrawalController::class, 'cashOut']);
+            Route::post('check-ajent',              [UserWithdrawalController::class, 'checkReceiver']);
+
+            // External sends (M-Pesa, Airtel, Bank) — provider-agnostic
+            Route::get('send-to-mobile',            [ExternalSendController::class, 'sendToMobileForm']);
+            Route::post('send-to-mobile',           [ExternalSendController::class, 'sendToMobile']);
+            Route::get('send-to-bank',              [ExternalSendController::class, 'sendToBankForm']);
+            Route::post('send-to-bank',             [ExternalSendController::class, 'sendToBank']);
+            Route::post('confirm-send-otp',         [ExternalSendController::class, 'confirmOtp']);
+
+            // Airtime — provider-agnostic
+            Route::get('buy-airtime',               [AirtimeController::class, 'form']);
+            Route::post('buy-airtime',              [AirtimeController::class, 'submit']);
+
+            // Bill payments — provider-agnostic
+            Route::get('pay-bill',                  [BillPaymentController::class, 'form']);
+            Route::post('bill-query',               [BillPaymentController::class, 'billQuery']);
+            Route::post('pay-bill',                 [BillPaymentController::class, 'payBill']);
+
+            // FX / Currency exchange — provider-agnostic
+            Route::get('fx-rate',                   [FxController::class, 'getRate']);
+            Route::get('fx-exchange',               [FxController::class, 'form']);
+            Route::post('fx-exchange',              [FxController::class, 'exchange']);
 
             //invoice
             Route::get('create-invoice',    [ManageInvoiceController::class, 'create']);
@@ -119,6 +146,11 @@ Route::prefix('user')->middleware('maintenance')->group(function () {
         Route::get('withdraw-methods',  [UserWithdrawalController::class, 'methods']);
         Route::get('withdraw-history',  [UserWithdrawalController::class, 'history']);
         Route::post('check/agent',      [UserWithdrawalController::class, 'checkReceiver']);
+
+        // New feature history
+        Route::get('airtime-history',   [AirtimeController::class, 'history']);
+        Route::get('bill-history',      [BillPaymentController::class, 'history']);
+        Route::get('fx-history',        [FxController::class, 'history']);
 
         //support ticket
         Route::get('support/tickets',                        [SupportTicketController::class, 'index'])->name('user.tickets');

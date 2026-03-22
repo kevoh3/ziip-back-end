@@ -8,6 +8,7 @@ use App\Models\Currency;
 use App\Models\Transaction;
 use App\Models\RequestMoney;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\ApiController;
 
@@ -113,66 +114,64 @@ class RequestMoneyController extends ApiController
         }
      
 
-        $wallet = Wallet::where('user_id',auth()->id())->where('user_type',1)->where('currency_id',$reqMoney->currency_id)->first();
+        return DB::transaction(function () use ($request, $reqMoney) {
+            $wallet = Wallet::where('user_id',auth()->id())->where('user_type',1)->where('currency_id',$reqMoney->currency_id)->lockForUpdate()->first();
 
-        if(!$wallet){
-            return $this->sendError('Error',['Wallet not found.']);
-        }
+            if(!$wallet){
+                return $this->sendError('Error',['Wallet not found.']);
+            }
 
-        if($reqMoney->request_amount > $wallet->balance){
-            return $this->sendError('Error',['Insufficient Balance.']);
-        }
+            if($reqMoney->request_amount > $wallet->balance){
+                return $this->sendError('Error',['Insufficient Balance.']);
+            }
 
-        $receiverWallet = Wallet::where('user_id',$reqMoney->sender_id)->where('user_type',1)->where('currency_id',$reqMoney->currency_id)->first();
+            $receiverWallet = Wallet::where('user_id',$reqMoney->sender_id)->where('user_type',1)->where('currency_id',$reqMoney->currency_id)->lockForUpdate()->first();
 
-        if(!$receiverWallet){
-            return $this->sendError('Error',['Receiver Wallet not found.']);
-        }
+            if(!$receiverWallet){
+                return $this->sendError('Error',['Receiver Wallet not found.']);
+            }
 
-        $wallet->balance  -= $reqMoney->request_amount;
-        $wallet->update();
+            $wallet->balance  -= $reqMoney->request_amount;
+            $wallet->update();
 
-        $trnx              = new Transaction();
-        $trnx->trnx        = str_rand();
-        $trnx->user_id     = auth()->id();
-        $trnx->user_type   = 1;
-        $trnx->currency_id = $reqMoney->currency_id;
-        $trnx->wallet_id   = $wallet->id;
-        $trnx->amount      = $reqMoney->request_amount;
-        $trnx->charge      = 0;
-        $trnx->type        = '-';
-        $trnx->remark      = 'request_money';
-        $trnx->details     = trans('Accept money request from '). $reqMoney->sender->email;
-        $trnx->save();
+            $trnx              = new Transaction();
+            $trnx->trnx        = str_rand();
+            $trnx->user_id     = auth()->id();
+            $trnx->user_type   = 1;
+            $trnx->currency_id = $reqMoney->currency_id;
+            $trnx->wallet_id   = $wallet->id;
+            $trnx->amount      = $reqMoney->request_amount;
+            $trnx->charge      = 0;
+            $trnx->type        = '-';
+            $trnx->remark      = 'request_money';
+            $trnx->details     = trans('Accept money request from '). $reqMoney->sender->email;
+            $trnx->save();
 
-        $receiverWallet->balance += $reqMoney->final_amount;
-        $receiverWallet->update();
+            $receiverWallet->balance += $reqMoney->final_amount;
+            $receiverWallet->update();
 
-        $receiverTrnx              = new Transaction();
-        $receiverTrnx->trnx        = $trnx->trnx;
-        $receiverTrnx->user_id     = $reqMoney->sender_id;
-        $receiverTrnx->user_type   = 1;
-        $receiverTrnx->currency_id = $reqMoney->currency_id;
-        $receiverTrnx->wallet_id   = $receiverWallet->id;
-        $receiverTrnx->amount      = $reqMoney->final_amount;
-        $receiverTrnx->charge      = $reqMoney->charge;
-        $receiverTrnx->type        = '+';
-        $receiverTrnx->remark      = 'request_money';
-        $receiverTrnx->details     = trans('Money request accepted by '). auth()->user()->email;
-        $receiverTrnx->save();
+            $receiverTrnx              = new Transaction();
+            $receiverTrnx->trnx        = $trnx->trnx;
+            $receiverTrnx->user_id     = $reqMoney->sender_id;
+            $receiverTrnx->user_type   = 1;
+            $receiverTrnx->currency_id = $reqMoney->currency_id;
+            $receiverTrnx->wallet_id   = $receiverWallet->id;
+            $receiverTrnx->amount      = $reqMoney->final_amount;
+            $receiverTrnx->charge      = $reqMoney->charge;
+            $receiverTrnx->type        = '+';
+            $receiverTrnx->remark      = 'request_money';
+            $receiverTrnx->details     = trans('Money request accepted by '). auth()->user()->email;
+            $receiverTrnx->save();
 
-        $reqMoney->status = 1;
-        $reqMoney->update();
+            $reqMoney->status = 1;
+            $reqMoney->update();
 
-        try {
+            try {
+                @mailSend('accept_request_money',["curr"=>$reqMoney->currency->code,'amount'=>amount($reqMoney->request_amount,$reqMoney->currency->type,3),"trnx"=>$trnx->trnx,"to_user"=>auth()->user()->email,"charge"=>amount($reqMoney->charge,$reqMoney->currency->type,3),'date_time'=> dateFormat( $receiverTrnx->created_at)],$reqMoney->sender);
+            } catch (\Throwable $th) {}
 
-            @mailSend('accept_request_money',["curr"=>$reqMoney->currency->code,'amount'=>amount($reqMoney->request_amount,$reqMoney->currency->type,3),"trnx"=>$trnx->trnx,"to_user"=>auth()->user()->email,"charge"=>amount($reqMoney->charge,$reqMoney->currency->type,3),'date_time'=> dateFormat( $receiverTrnx->created_at)],$reqMoney->sender);
-
-        } catch (\Throwable $th) {
-            
-        }
-        
-        return $this->sendResponse(['success'],'Money request has been accepted.');
+            return $this->sendResponse(['success'],'Money request has been accepted.');
+        });
     }
 
     public function rejectRequest(Request $request)

@@ -7,6 +7,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Support\Facades\Cache;
 
 class User extends Authenticatable
 {
@@ -46,6 +47,22 @@ class User extends Authenticatable
     protected $casts = [
         'kyc_info' => 'array'
     ];
+
+    /**
+     * Resolve the ISO-3166-1 alpha-2 country code from the stored country name.
+     * e.g. "Kenya" → "KE", "Uganda" → "UG"
+     * Result is cached for 60 minutes to avoid repeated DB lookups.
+     */
+    public function getCountryCodeAttribute(): ?string
+    {
+        if (!$this->country) return null;
+
+        return Cache::remember(
+            'country_code_' . md5($this->country),
+            3600,
+            fn() => Country::where('name', $this->country)->value('code')
+        );
+    }
 
     public function wallets()
     {
